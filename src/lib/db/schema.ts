@@ -82,6 +82,9 @@ export const lessonAttempts = sqliteTable(
     completed: integer("completed", { mode: "boolean" }).notNull(),
     startedAt: integer("started_at").notNull(),
     finishedAt: integer("finished_at").notNull(),
+    /* Phase 4 (migration v2): per-attempt spotlight of the worst characters
+     * (expected, misses, avg latency) — the Results screen's key cards. */
+    keyReport: text("key_report", { mode: "json" }),
   },
   (t) => [
     index("idx_lesson_attempts_lesson_id").on(t.lessonId),
