@@ -11,6 +11,7 @@ import {
   type SessionSummary,
 } from "../lib/schemas";
 import { useUiStore } from "./useUiStore";
+import { notifyStatsChanged } from "./useStatsStore";
 
 /**
  * Session store (PRD §22) — TRANSIENT state only: current lesson, engine
@@ -46,12 +47,21 @@ interface SessionStore {
   persistError: string | null;
   persistStage: PersistStage;
   trainingSessionId: string | null;
+  /** Wall-clock time the training_sessions row was opened (abandon path). */
+  sessionStartedAt: number | null;
 
   startLesson: (lesson: Lesson) => Promise<void>;
   typeChar: (char: string) => void;
   backspace: () => void;
   /** Runs (or resumes) the save-attempt pipeline after a failure. */
   retryPersist: () => Promise<void>;
+  /**
+   * §3.7 abandon path: leaving an ACTIVE session via navigation closes the
+   * `training_sessions` row (ended_at set, chars typed so far kept) but
+   * writes NO attempt row — partial typing is not an attempt (§10 applies
+   * to finished attempts). Counters stay unpolluted.
+   */
+  abandon: () => Promise<void>;
   reset: () => void;
 }
 
@@ -158,6 +168,8 @@ export const useSessionStore = create<SessionStore>((set, get) => {
       useUiStore.getState().navigate("lesson-results", {
         "lesson-results": { attemptId: get().outcome?.attempt.id ?? null },
       });
+      // Charts/hero aggregates re-query on the next visit (cache drop).
+      notifyStatsChanged();
     } catch (error) {
       // Attempts are never silently dropped: surface the error on the
       // Results screen (the summary itself is still shown from memory).
@@ -192,8 +204,12 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     persistError: null,
     persistStage: "none",
     trainingSessionId: null,
+    sessionStartedAt: null,
 
     startLesson: async (lesson) => {
+      // Navigating into a new session while one is running abandons the old
+      // one first (§3.7): its session row closes, no attempt row is written.
+      await get().abandon();
       stopTimer();
       set({
         phase: "running",
@@ -205,6 +221,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
         persistError: null,
         persistStage: "none",
         trainingSessionId: null,
+        sessionStartedAt: Date.now(),
       });
       startTimer(() => set({ now: Date.now() }));
 
@@ -235,6 +252,40 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     backspace: () => apply({ type: "backspace" }),
     retryPersist: persistFinishedSession,
 
+    abandon: async () => {
+      const { phase, trainingSessionId, sessionStartedAt, engineState } = get();
+      if (phase !== "running") return;
+      stopTimer();
+
+      if (trainingSessionId !== null) {
+        const now = Date.now();
+        const startedAt = sessionStartedAt ?? now;
+        const charsTyped =
+          engineState !== null
+            ? engineState.correctChars + engineState.incorrectChars
+            : 0;
+        try {
+          // Close the session row (ended_at set = abandoned, since no attempt
+          // row will ever reference it). Best effort: never block navigation.
+          await sessionsRepo.close(trainingSessionId, now, now - startedAt, charsTyped);
+        } catch {
+          // A force-quit may leave an unclosed row — tolerated per schema note.
+        }
+      }
+
+      set({
+        phase: "idle",
+        lesson: null,
+        engineState: null,
+        summary: null,
+        outcome: null,
+        persistStage: "none",
+        trainingSessionId: null,
+        sessionStartedAt: null,
+      });
+      notifyStatsChanged();
+    },
+
     reset: () => {
       stopTimer();
       set({
@@ -246,6 +297,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
         persistError: null,
         persistStage: "none",
         trainingSessionId: null,
+        sessionStartedAt: null,
       });
     },
   };
