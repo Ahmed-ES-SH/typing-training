@@ -1,16 +1,738 @@
-import { ScreenStub } from "../components/ScreenStub";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { KeyboardVisualization } from "../components/KeyboardVisualization";
+import { DEFAULT_FIXTURE_LESSON, FIXTURE_LESSONS } from "../content/fixtures";
+import { findTargetKey, FINGERS, getActiveLayout } from "../lib/layout";
+import { liveMetrics } from "../lib/engine/metrics";
+import type { SessionState } from "../lib/engine/types";
+import type { Lesson } from "../lib/schemas";
+import { useSessionStore } from "../stores/useSessionStore";
 
 /**
- * Stub — Typing Session (module sidebar, code buffer with per-char
- * evaluation, live WPM/accuracy telemetry, terminal drawer).
- * Design: `screens/current_lesson_typekernel/` — implemented in Phase 3.
+ * Typing Session screen — implemented from `screens/current_lesson_typekernel`
+ * (design `code.html`): module sidebar, full-focus code buffer with per-char
+ * evaluation, live telemetry strip and on-screen keyboard.
+ *
+ * Sidebar module states (✓ completed / RUNNING / next / 🔒 locked) are
+ * FIXTURES until Phase 4 wires the real curriculum + unlock rule.
  */
-export default function TypingSessionScreen() {
+
+/* ---------------------------------------------------------------------------
+ * Fixture sidebar data (Phase 4 replaces this with real lesson states)
+ * ------------------------------------------------------------------------- */
+
+type ModuleState = "completed" | "running" | "next" | "locked";
+
+interface FixtureModule {
+  num: string;
+  title: string;
+  tokens: string;
+  state: ModuleState;
+  wpm?: number;
+  accuracy?: number;
+  pr?: number;
+  note?: string;
+  lesson?: Lesson;
+}
+
+const FIXTURE_MODULES: FixtureModule[] = [
+  {
+    num: "3.12",
+    title: "Bitwise Operators",
+    tokens: "Tokens: &, |, ^, ~",
+    state: "completed",
+    wpm: 61,
+    accuracy: 96,
+    lesson: FIXTURE_LESSONS[2],
+  },
+  {
+    num: "3.13",
+    title: "Pointers & Addresses",
+    tokens: "Tokens: *, &, &&",
+    state: "completed",
+    wpm: 58,
+    accuracy: 97,
+  },
+  {
+    num: "3.14",
+    title: "Struct Arrow & Member",
+    tokens: "Tokens: ->, ., (*p).",
+    state: "running",
+    pr: 42,
+    note: "18.4ms",
+    lesson: DEFAULT_FIXTURE_LESSON,
+  },
+  {
+    num: "3.15",
+    title: "Nested JSON & Map Braces",
+    tokens: "Tokens: {}, [], [:]",
+    state: "next",
+    lesson: FIXTURE_LESSONS[1],
+  },
+  { num: "3.16", title: "Regex & Escapes", tokens: "Tokens: \\d, \\s, [^a-z]", state: "locked" },
+  { num: "3.17", title: "Generics & Lifetimes", tokens: "Tokens: <'a, T>, PhantomData", state: "locked" },
+  { num: "3.18", title: "Double Colons & Paths", tokens: "Tokens: std::sync::Arc, ::new", state: "locked" },
+  { num: "3.19", title: "Lambda & Capture Syntax", tokens: "Tokens: [=], [&], -> auto", state: "locked" },
+];
+
+/* ---------------------------------------------------------------------------
+ * Small helpers
+ * ------------------------------------------------------------------------- */
+
+const fmt1 = (value: number): string => value.toFixed(1);
+
+const fmtClock = (ms: number): string => {
+  const total = Math.floor(ms / 1000);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+};
+
+/* ---------------------------------------------------------------------------
+ * Sidebar
+ * ------------------------------------------------------------------------- */
+
+function ModuleCard({ module, onSelect }: {
+  module: FixtureModule;
+  onSelect: (module: FixtureModule) => void;
+}) {
+  if (module.state === "running") {
+    return (
+      <div className="relative overflow-hidden rounded-lg border border-primary-container/40 bg-surface-container-high p-space-sm shadow-lg ring-1 ring-primary-container/30">
+        <div className="absolute bottom-0 left-0 top-0 w-1.5 bg-primary-container shadow-[0_0_12px_rgba(249,115,22,0.9)]" />
+        <div className="mb-1 flex items-center justify-between pl-1">
+          <div className="flex items-center gap-space-xs">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary-container" />
+            </span>
+            <span className="font-code-sm text-code-sm font-bold text-primary">
+              {module.num} {module.title}
+            </span>
+          </div>
+          <span className="rounded bg-primary-container px-1.5 py-0.5 font-label-sm text-label-sm font-bold uppercase tracking-wider text-on-primary-container">
+            RUNNING
+          </span>
+        </div>
+        <div className="flex items-center justify-between pl-3.5 font-code-sm text-code-sm text-on-surface-variant">
+          <span className="text-primary-fixed">{module.tokens}</span>
+          <span className="font-semibold text-on-surface">PR: {module.pr} WPM</span>
+        </div>
+        {module.note && (
+          <div className="mt-2 flex items-center justify-between rounded bg-surface-container-lowest/80 px-2 py-1 pl-2 text-[11px] font-code-sm text-primary">
+            <span className="flex items-center gap-1">
+              <span className="material-symbols-outlined text-[13px]">tune</span>
+              <span>Dual-finger glide target</span>
+            </span>
+            <span className="font-mono text-on-surface-variant">{module.note}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (module.state === "completed") {
+    return (
+      <button
+        type="button"
+        onClick={() => onSelect(module)}
+        className="group w-full rounded-lg border border-transparent bg-surface-container-lowest/70 p-space-sm text-left shadow-sm transition-all hover:border-surface-container-highest/60 hover:bg-surface-container"
+      >
+        <div className="mb-1 flex items-center justify-between">
+          <div className="flex items-center gap-space-xs">
+            <span
+              className="material-symbols-outlined text-[16px] text-primary"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              check_circle
+            </span>
+            <span className="font-code-sm text-code-sm font-semibold text-on-surface">
+              {module.num} {module.title}
+            </span>
+          </div>
+          <span className="rounded bg-surface-container-high px-1.5 py-0.5 font-code-sm text-code-sm text-primary">
+            {module.wpm} WPM
+          </span>
+        </div>
+        <div className="flex items-center justify-between pl-6 font-code-sm text-code-sm text-on-surface-variant">
+          <span className="text-outline">{module.tokens}</span>
+          <span>{module.accuracy}% Acc</span>
+        </div>
+      </button>
+    );
+  }
+
+  if (module.state === "next") {
+    return (
+      <button
+        type="button"
+        onClick={() => onSelect(module)}
+        className="w-full rounded-lg bg-surface-container-lowest/50 p-space-sm text-left shadow-sm opacity-90 transition-all hover:bg-surface-container"
+      >
+        <div className="mb-1 flex items-center justify-between">
+          <div className="flex items-center gap-space-xs">
+            <span className="material-symbols-outlined text-[16px] text-on-surface-variant">
+              lock_open
+            </span>
+            <span className="font-code-sm text-code-sm font-medium text-on-surface">
+              {module.num} {module.title}
+            </span>
+          </div>
+          <span className="rounded bg-surface-container-lowest px-1.5 py-0.5 font-code-sm text-code-sm text-on-surface-variant">
+            NEXT
+          </span>
+        </div>
+        <div className="flex items-center justify-between pl-6 font-code-sm text-code-sm text-on-surface-variant">
+          <span className="text-outline">{module.tokens}</span>
+          <span>Pending</span>
+        </div>
+      </button>
+    );
+  }
+
+  // locked
   return (
-    <ScreenStub
-      screenId="typing-session"
-      phase={3}
-      description="Live training session: module sidebar, code buffer with current-char highlight and real-time telemetry."
-    />
+    <div className="rounded-lg bg-surface-container-lowest/20 p-space-sm opacity-50">
+      <div className="mb-1 flex items-center justify-between">
+        <div className="flex items-center gap-space-xs">
+          <span className="material-symbols-outlined text-[16px] text-outline">lock</span>
+          <span className="font-code-sm text-code-sm text-on-surface-variant">
+            {module.num} {module.title}
+          </span>
+        </div>
+        <span className="font-label-sm text-label-sm text-outline">LOCKED</span>
+      </div>
+      <div className="pl-6 font-code-sm text-code-sm text-outline">{module.tokens}</div>
+    </div>
+  );
+}
+
+function ModuleSidebar({
+  activeLessonId,
+  onSelect,
+}: {
+  activeLessonId: string | null;
+  onSelect: (module: FixtureModule) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const completed = FIXTURE_MODULES.filter((m) => m.state === "completed").length;
+
+  return (
+    <aside
+      className={`flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-surface-container-highest/30 bg-surface-container-low shadow-2xl transition-all duration-300 lg:w-88 xl:w-96 ${
+        collapsed ? "hidden" : ""
+      }`}
+    >
+      {/* Track header */}
+      <div className="relative overflow-hidden border-b border-surface-container-highest/40 bg-gradient-to-b from-surface-container-high/40 to-transparent p-space-base">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-primary-container/15 blur-2xl" />
+        <div className="mb-1.5 flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant">
+          <span className="font-bold tracking-wider text-primary">TRACK 03 // LEVEL 03</span>
+          <span className="rounded bg-surface-container px-space-xs py-0.5 font-code-sm font-bold text-primary">
+            {completed}/{FIXTURE_MODULES.length}
+          </span>
+        </div>
+        <h2 className="mb-2 font-headline-md text-headline-md leading-snug tracking-tight text-on-surface">
+          Programming Symbols &amp; Pointers
+        </h2>
+        <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-container-lowest">
+          <div className="h-full w-[28%] bg-gradient-to-r from-secondary-container via-primary-container to-primary" />
+        </div>
+        <div className="flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant">
+          <span>28% Completed</span>
+          <span className="font-medium text-primary-container">
+            {FIXTURE_MODULES.length - completed} Modules Remaining
+          </span>
+        </div>
+      </div>
+
+      {/* Filter tabs (fixture — real filters arrive with Phase 4) */}
+      <div className="flex flex-col gap-1.5 border-b border-surface-container-highest/30 bg-surface-container-lowest/40 p-space-xs">
+        <div className="flex items-center gap-1 rounded-lg bg-surface-container-lowest p-1 font-label-sm text-label-sm text-on-surface-variant">
+          <button type="button" className="flex-1 rounded bg-surface-container-high px-2 py-1 text-center font-bold text-primary shadow-sm transition-colors">
+            All ({FIXTURE_MODULES.length})
+          </button>
+          <button type="button" className="flex-1 rounded px-2 py-1 text-center transition-colors hover:bg-surface-container">
+            Ch 3.2
+          </button>
+          <button type="button" className="flex-1 rounded px-2 py-1 text-center transition-colors hover:bg-surface-container">
+            Incomplete
+          </button>
+        </div>
+      </div>
+
+      {/* Module list */}
+      <div className="flex flex-1 flex-col gap-space-xs overflow-y-auto p-space-sm">
+        {FIXTURE_MODULES.map((module) => (
+          <ModuleCard
+            key={module.num}
+            module={module}
+            onSelect={
+              module.lesson !== undefined && module.lesson.id !== activeLessonId
+                ? onSelect
+                : () => {}
+            }
+          />
+        ))}
+      </div>
+
+      {/* Footer actions */}
+      <div className="flex shrink-0 flex-col gap-1.5 border-t border-surface-container-highest/40 bg-surface-container-lowest/60 p-space-sm">
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          className="flex w-full items-center justify-between rounded-lg bg-surface-container px-space-sm py-2 font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+        >
+          <span className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">keyboard_double_arrow_left</span>
+            <span>Collapse Drawer</span>
+          </span>
+          <kbd className="rounded border border-surface-container-highest/50 bg-surface-container-lowest px-1.5 py-0.5 font-code-sm text-code-sm text-outline">
+            Ctrl+B
+          </kbd>
+        </button>
+        <button
+          type="button"
+          className="flex w-full items-center justify-center gap-1.5 rounded py-1.5 font-label-md text-label-md text-primary transition-colors hover:text-primary-fixed"
+        >
+          <span className="material-symbols-outlined text-[16px]">map</span>
+          <span>Full Curriculum Map</span>
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Code buffer
+ * ------------------------------------------------------------------------- */
+
+interface DisplayLine {
+  text: string;
+  /** Global index of the line's first char (the newline occupies one entry). */
+  offset: number;
+}
+
+function CodeBuffer({ engineState, running }: {
+  engineState: SessionState;
+  running: boolean;
+}) {
+  const activeLineRef = useRef<HTMLDivElement | null>(null);
+
+  const lines = useMemo<DisplayLine[]>(() => {
+    const result: DisplayLine[] = [];
+    let offset = 0;
+    for (const text of engineState.content.split("\n")) {
+      result.push({ text, offset });
+      offset += text.length + 1;
+    }
+    return result;
+  }, [engineState.content]);
+
+  // The line the caret currently sits on (also line-end positions, where the
+  // next char is the line's newline).
+  const activeLine = lines.findIndex(
+    (line) =>
+      engineState.position >= line.offset &&
+      engineState.position <= line.offset + line.text.length,
+  );
+
+  useEffect(() => {
+    activeLineRef.current?.scrollIntoView({ block: "nearest" });
+  }, [engineState.position]);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-surface-container-highest/40 bg-surface-container-lowest shadow-2xl">
+      {/* Editor sub-header */}
+      <div className="flex shrink-0 items-center justify-between border-b border-surface-container-highest/40 bg-surface-container-low px-space-base py-1.5">
+        <div className="flex items-center gap-space-sm">
+          <div className="flex items-center gap-2 rounded-t-md border-t-2 border-primary-container bg-surface-container-lowest px-space-sm py-1 font-code-sm text-code-sm font-semibold text-primary">
+            <span className="material-symbols-outlined text-[15px] text-primary-container">data_object</span>
+            <span>fixture_module.cpp</span>
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary-container" />
+          </div>
+          <div className="hidden items-center gap-1 px-2 font-code-sm text-code-sm text-on-surface-variant sm:flex">
+            <span>src/content/fixtures.ts</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-space-md font-code-sm text-code-sm text-on-surface-variant">
+          <span className="hidden rounded bg-surface-container px-2 py-0.5 text-primary-fixed md:inline">
+            LEVEL 03 // SYMBOLS
+          </span>
+          <span className="hidden sm:inline">UTF-8</span>
+          <div className="flex items-center gap-1 text-on-surface">
+            <span className="material-symbols-outlined text-[14px] text-primary">pin_drop</span>
+            <span>
+              Ln {activeLine + 1}, Col{" "}
+              {Math.max(1, engineState.position - (lines[activeLine]?.offset ?? 0) + 1)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Buffer body */}
+      <div className="relative flex-1 overflow-auto p-space-base font-code-lg text-code-lg leading-loose sm:p-space-lg">
+        {lines.map((line, lineIndex) => {
+          const isActive = lineIndex === activeLine && running;
+          const caretAtLineEnd =
+            running && engineState.position === line.offset + line.text.length;
+          return (
+            <div
+              key={lineIndex}
+              ref={isActive ? activeLineRef : undefined}
+              className={`flex items-center rounded-md ${
+                isActive ? "relative -mx-1 bg-surface-container-high/60 px-1 py-1 shadow-inner" : ""
+              }`}
+            >
+              {isActive && (
+                <div className="absolute bottom-0 left-0 top-0 w-1.5 rounded-l bg-primary-container shadow-[0_0_12px_rgba(249,115,22,0.8)]" />
+              )}
+              <span
+                className={`w-12 select-none pr-5 text-right font-code-sm text-code-sm ${
+                  isActive ? "font-bold text-primary" : "text-outline-variant"
+                }`}
+              >
+                {lineIndex + 1}
+              </span>
+              <span className="whitespace-pre">
+                {line.text.length === 0 && !caretAtLineEnd ? (
+                  "\u00A0"
+                ) : (
+                  Array.from(line.text).map((expected, i) => {
+                    const globalIndex = line.offset + i;
+                    const entry = engineState.entries[globalIndex];
+                    if (entry === undefined) return null;
+                    const isCurrent = running && globalIndex === engineState.position;
+
+                    const statusClass =
+                      entry.status === "correct"
+                        ? "text-on-surface"
+                        : entry.status === "incorrect"
+                          ? "rounded bg-error-container text-on-error-container"
+                          : "text-outline opacity-70";
+
+                    return (
+                      <span key={globalIndex} className="relative inline-block">
+                        {isCurrent && (
+                          <span className="absolute -left-0.5 top-1/2 h-5 w-0.5 -translate-y-1/2 animate-pulse bg-primary shadow-[0_0_8px_rgba(249,115,22,1)]" />
+                        )}
+                        <span
+                          className={
+                            isCurrent
+                              ? "rounded border border-primary-container/50 bg-primary-container/25 px-0.5 text-primary"
+                              : statusClass
+                          }
+                        >
+                          {entry.status === "incorrect" && entry.typed !== null
+                            ? entry.typed
+                            : expected === " "
+                              ? "\u00A0"
+                              : expected}
+                        </span>
+                      </span>
+                    );
+                  })
+                )}
+                {caretAtLineEnd && (
+                  <span className="ml-0.5 inline-block h-6 w-2.5 animate-pulse bg-primary-container shadow-[0_0_12px_rgba(249,115,22,1)]" />
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Screen
+ * ------------------------------------------------------------------------- */
+
+export default function TypingSessionScreen() {
+  const phase = useSessionStore((s) => s.phase);
+  const lesson = useSessionStore((s) => s.lesson);
+  const engineState = useSessionStore((s) => s.engineState);
+  const now = useSessionStore((s) => s.now);
+  const summary = useSessionStore((s) => s.summary);
+  const persistError = useSessionStore((s) => s.persistError);
+  const startLesson = useSessionStore((s) => s.startLesson);
+  const typeChar = useSessionStore((s) => s.typeChar);
+  const backspace = useSessionStore((s) => s.backspace);
+  const retryPersist = useSessionStore((s) => s.retryPersist);
+
+  // Auto-start the fixture lesson (Phase 4 replaces this with navigation).
+  useEffect(() => {
+    if (phase === "idle") void startLesson(DEFAULT_FIXTURE_LESSON);
+  }, [phase, startLesson]);
+
+  // Global keydown listener — active only while a session is running.
+  useEffect(() => {
+    if (phase !== "running") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      // Modifier combos (Ctrl+C, Ctrl+B, ...) pass through untouched.
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        backspace();
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        typeChar("\n");
+      } else if (event.key === "Tab") {
+        // Documented choice: Tab inserts a space (content never has tabs).
+        event.preventDefault();
+        typeChar(" ");
+      } else if (event.key.length === 1) {
+        event.preventDefault();
+        typeChar(event.key);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [phase, typeChar, backspace]);
+
+  const running = phase === "running";
+  const metrics = engineState !== null ? liveMetrics(engineState, now) : null;
+  const nextCharValue =
+    engineState !== null && running
+      ? (engineState.entries[engineState.position]?.expected ?? null)
+      : null;
+
+  const nextTarget = nextCharValue !== null ? findTargetKey(getActiveLayout(), nextCharValue) : null;
+  const nextFinger = nextTarget !== null ? FINGERS[nextTarget.key.finger] : null;
+  const upcoming = engineState?.content.slice(
+    engineState.position,
+    engineState.position + 2,
+  ) ?? "";
+
+  return (
+    <main className="flex min-h-0 w-full flex-1 gap-space-sm overflow-hidden bg-surface p-space-sm sm:p-space-base">
+      <ModuleSidebar
+        activeLessonId={lesson?.id ?? null}
+        onSelect={(module) => module.lesson && void startLesson(module.lesson)}
+      />
+
+      <section className="relative flex h-full min-w-0 flex-1 flex-col gap-space-sm overflow-hidden">
+        {/* Telemetry & controls */}
+        <div className="flex shrink-0 flex-col gap-space-sm rounded-xl border border-surface-container-highest/30 bg-surface-container-low p-space-sm shadow-md sm:p-space-base">
+          <div className="flex flex-wrap items-center justify-between gap-space-sm">
+            <div className="flex flex-wrap items-center gap-space-md sm:gap-space-lg">
+              {/* WPM */}
+              <div className="flex items-baseline gap-1.5">
+                <span className="font-headline-xl text-headline-xl font-bold tracking-tight text-primary">
+                  {metrics ? fmt1(metrics.wpm) : "0.0"}
+                </span>
+                <span className="font-code-sm text-code-sm text-primary">WPM</span>
+              </div>
+              <div className="h-8 w-px bg-surface-container-highest" />
+              {/* Accuracy */}
+              <div className="flex items-baseline gap-1">
+                <span className="font-headline-xl text-headline-xl font-bold tracking-tight text-on-surface">
+                  {metrics ? fmt1(metrics.accuracy) : "100.0"}
+                </span>
+                <span className="font-code-sm text-code-sm text-on-surface-variant">%</span>
+                <span className="font-code-sm text-code-sm text-on-surface-variant">ACC</span>
+              </div>
+              <div className="hidden h-8 w-px bg-surface-container-highest sm:block" />
+              {/* Errors */}
+              <div className="flex items-center gap-space-xs">
+                <span className="rounded bg-error-container px-2 py-0.5 font-code-sm text-code-sm font-bold text-error">
+                  {metrics ? metrics.incorrectChars : 0} ERR
+                </span>
+                <span className="rounded bg-surface-container px-2 py-0.5 font-code-sm text-code-sm text-on-surface-variant">
+                  {metrics ? fmt1(metrics.errorRate) : "0.0"}% RATE
+                </span>
+              </div>
+              <div className="hidden h-8 w-px bg-surface-container-highest md:block" />
+              {/* Chars */}
+              <div className="flex flex-col">
+                <span className="font-code-sm text-code-sm uppercase tracking-wider text-on-surface-variant">
+                  Chars
+                </span>
+                <div className="mt-0.5 flex items-baseline gap-1 font-code-lg text-code-lg font-bold text-secondary">
+                  {metrics ? metrics.totalChars : 0}
+                  <span className="font-code-sm text-code-sm font-normal text-on-surface-variant">
+                    ({metrics ? metrics.correctChars : 0} ok / {metrics ? metrics.incorrectChars : 0} bad)
+                  </span>
+                </div>
+              </div>
+              <div className="hidden h-8 w-px bg-surface-container-highest md:block" />
+              {/* Fix-ups */}
+              <div className="hidden flex-col md:flex">
+                <span className="font-code-sm text-code-sm uppercase tracking-wider text-on-surface-variant">
+                  Fix-Ups
+                </span>
+                <div className="mt-0.5 flex items-baseline gap-1">
+                  <span className="font-code-lg text-code-lg font-bold text-secondary">
+                    {metrics ? metrics.backspaceCount : 0}
+                  </span>
+                  <span className="font-code-sm text-code-sm text-on-surface-variant">backspaces</span>
+                </div>
+              </div>
+              <div className="h-8 w-px bg-surface-container-highest" />
+              {/* Elapsed */}
+              <div className="flex items-center gap-1 font-code-lg text-code-lg font-semibold text-on-surface">
+                <span className="material-symbols-outlined text-[16px] text-primary">timer</span>
+                <span>{metrics ? fmtClock(metrics.elapsedMs) : "00:00"}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-space-xs">
+              <button
+                type="button"
+                onClick={() => lesson && void startLesson(lesson)}
+                className="flex items-center gap-1 rounded-lg border border-surface-container-highest/40 bg-surface-container px-3 py-1.5 font-label-md text-label-md text-on-surface transition-colors hover:bg-surface-container-high"
+                title="Restart Buffer"
+              >
+                <span className="material-symbols-outlined text-[16px]">refresh</span>
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
+
+          {persistError !== null && (
+            <div className="flex items-center justify-between gap-2 rounded border border-error/40 bg-error-container/40 px-space-sm py-1 font-code-sm text-code-sm text-error">
+              <span className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[14px]">error</span>
+                SAVE FAILED: {persistError}
+              </span>
+              <button
+                type="button"
+                onClick={() => void retryPersist()}
+                className="rounded bg-surface-container px-2 py-0.5 font-bold text-on-surface hover:bg-surface-container-high"
+              >
+                RETRY SAVE
+              </button>
+            </div>
+          )}
+
+          {/* Buffer progress */}
+          <div className="flex flex-col gap-1">
+            <div className="relative h-2 w-full overflow-hidden rounded-full border border-surface-container-highest/30 bg-surface-container-lowest">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-secondary-container via-primary-container to-primary shadow-[0_0_8px_rgba(249,115,22,0.6)] transition-all duration-300"
+                style={{ width: `${metrics ? Math.min(100, metrics.progressPct) : 0}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant">
+              <span>
+                Buffer Progress: {engineState?.position ?? 0} of{" "}
+                {engineState?.entries.length ?? 0} chars committed
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-outline">
+                  Stream Speed:{" "}
+                  {metrics && metrics.elapsedMs > 0
+                    ? Math.round((metrics.totalChars / metrics.elapsedMs) * 60_000)
+                    : 0}{" "}
+                  CPM
+                </span>
+                <span className="font-bold text-primary">
+                  {metrics ? Math.round(metrics.progressPct) : 0}% Finished
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Code buffer */}
+        {engineState !== null && <CodeBuffer engineState={engineState} running={running} />}
+
+        {/* Keyboard visualization + status strip */}
+        <div className="flex shrink-0 select-none flex-col gap-2 rounded-xl border border-surface-container-highest/40 bg-surface-container-low/95 p-3 shadow-inner">
+          <div className="flex items-center justify-between px-1 font-code-sm text-[11px]">
+            <span className="flex items-center gap-2 font-semibold text-primary">
+              <span className="material-symbols-outlined text-[14px] text-primary-container">keyboard</span>
+              <span>60% MECH PROGRAMMER DECK</span>
+            </span>
+            <span className="flex items-center gap-1 text-[10px] text-on-surface-variant">
+              <span className="h-2 w-2 rounded bg-primary-container shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
+              <span>
+                Active Sequence Keys:{" "}
+                {Array.from(upcoming).map((char, i) => (
+                  <strong key={i} className="text-primary">
+                    [{char === "\n" ? "\\n" : char}]
+                    {i === 0 && upcoming.length > 1 ? " then " : " "}
+                  </strong>
+                ))}
+              </span>
+              {nextFinger !== null && (
+                <span className="hidden items-center gap-1 text-outline sm:flex">
+                  <span className="material-symbols-outlined text-[12px] text-primary">pan_tool</span>
+                  <span>
+                    {nextFinger.label}
+                    {nextTarget?.requiresShift === true ? " + SHIFT" : ""}
+                  </span>
+                </span>
+              )}
+            </span>
+          </div>
+          <KeyboardVisualization nextChar={nextCharValue} />
+        </div>
+
+        {/* Session finished overlay (minimal inline summary — full Results
+            screen arrives in Phase 4) */}
+        {phase === "finished" && summary !== null && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl bg-surface/85 backdrop-blur-sm">
+            <div className="w-96 rounded-xl border border-primary-container/40 bg-surface-container-low p-space-lg shadow-2xl">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="font-headline-md text-headline-md text-on-surface">SESSION COMPLETE</h3>
+                {persistError === null ? (
+                  <span className="flex items-center gap-1 rounded bg-surface-container-high px-2 py-0.5 font-code-sm text-code-sm font-bold text-primary">
+                    <span className="material-symbols-outlined text-[14px] text-primary">check_circle</span>
+                    SAVED
+                  </span>
+                ) : (
+                  <span className="rounded bg-error-container px-2 py-0.5 font-code-sm text-code-sm font-bold text-error">
+                    NOT SAVED
+                  </span>
+                )}
+              </div>
+              <div className="mb-4 grid grid-cols-2 gap-space-sm font-code-md text-code-md">
+                <div className="rounded-lg bg-surface-container-lowest p-space-sm">
+                  <div className="font-code-sm text-code-sm text-on-surface-variant">GROSS WPM</div>
+                  <div className="font-headline-lg text-headline-lg font-bold text-primary">
+                    {fmt1(summary.wpm)}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-surface-container-lowest p-space-sm">
+                  <div className="font-code-sm text-code-sm text-on-surface-variant">ACCURACY</div>
+                  <div className="font-headline-lg text-headline-lg font-bold text-on-surface">
+                    {fmt1(summary.accuracy)}%
+                  </div>
+                </div>
+                <div className="rounded-lg bg-surface-container-lowest p-space-sm">
+                  <div className="font-code-sm text-code-sm text-on-surface-variant">DURATION</div>
+                  <div className="font-code-lg text-code-lg font-semibold text-on-surface">
+                    {fmtClock(summary.durationMs)}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-surface-container-lowest p-space-sm">
+                  <div className="font-code-sm text-code-sm text-on-surface-variant">ERRORS / FIX-UPS</div>
+                  <div className="font-code-lg text-code-lg font-semibold text-on-surface">
+                    {summary.errorCount} / {summary.backspaceCount}
+                  </div>
+                </div>
+              </div>
+              {persistError !== null && (
+                <button
+                  type="button"
+                  onClick={() => void retryPersist()}
+                  className="mb-2 w-full rounded-lg border border-error/40 bg-error-container/40 px-space-sm py-2 font-label-md text-label-md text-error hover:bg-error-container/60"
+                >
+                  RETRY SAVE
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => lesson && void startLesson(lesson)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary-container py-2 font-label-md text-label-md font-bold text-on-primary-container shadow-[0_0_14px_rgba(249,115,22,0.4)] transition-all hover:bg-tertiary-container"
+              >
+                <span className="material-symbols-outlined text-[16px]">refresh</span>
+                <span>RETRY LESSON</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+    </main>
   );
 }
