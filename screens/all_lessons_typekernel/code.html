@@ -1,0 +1,635 @@
+<!DOCTYPE html><html class="dark" lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"error-container":"#93000a","inverse-surface":"#dfe2ef","surface-container-low":"#181b25","on-background":"#dfe2ef","on-surface":"#dfe2ef","on-secondary-fixed":"#301400","background":"#0f131c","on-secondary-container":"#451f00","surface-container-high":"#262a34","tertiary-fixed":"#ffdbce","on-secondary":"#4f2500","on-tertiary-container":"#5d1d00","secondary-fixed":"#ffdcc5","on-primary-container":"#582200","primary":"#ffb690","surface-bright":"#353943","surface-tint":"#ffb690","on-surface-variant":"#e0c0b1","on-primary":"#552100","surface-container":"#1c1f29","secondary-fixed-dim":"#ffb783","tertiary-fixed-dim":"#ffb599","surface":"#0f131c","on-primary-fixed":"#341100","error":"#ffb4ab","outline":"#a78b7d","surface-container-lowest":"#0a0e17","inverse-primary":"#9d4300","on-tertiary":"#5a1c00","on-tertiary-fixed-variant":"#7f2b00","primary-fixed":"#ffdbca","on-secondary-fixed-variant":"#713700","tertiary":"#ffb599","tertiary-container":"#ff6d2c","surface-container-highest":"#31353f","on-primary-fixed-variant":"#783200","primary-container":"#f97316","inverse-on-surface":"#2c303a","on-tertiary-fixed":"#370e00","outline-variant":"#584237","primary-fixed-dim":"#ffb690","on-error":"#690005","surface-dim":"#0f131c","secondary":"#ffb783","secondary-container":"#d97722","surface-variant":"#31353f","on-error-container":"#ffdad6"},borderRadius:{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},spacing:{"gutter-mobile":"0.75rem","gutter-desktop":"1.25rem","space-base":"1rem","space-lg":"1.5rem","space-sm":"0.5rem","space-2xl":"3rem","space-xl":"2rem","space-2xs":"0.125rem","space-md":"0.75rem","terminal-drawer-collapsed":"2.5rem","sidebar-width":"16rem","space-xs":"0.25rem"},fontFamily:{"headline-xl-mobile":["Inter"],"label-sm":["JetBrains Mono"],"display-lg":["Inter"],"headline-xl":["Inter"],"headline-md":["Inter"],"body-sm":["Inter"],"body-lg":["Inter"],"body-md":["Inter"],"headline-lg":["Inter"],"code-lg":["JetBrains Mono"],"label-md":["Inter"],"code-sm":["JetBrains Mono"],"code-md":["JetBrains Mono"]},fontSize:{"headline-xl-mobile":["26px",{"lineHeight":"34px","letterSpacing":"-0.015em","fontWeight":"700"}],"label-sm":["11px",{"lineHeight":"14px","letterSpacing":"0.06em","fontWeight":"600"}],"display-lg":["40px",{"lineHeight":"48px","letterSpacing":"-0.025em","fontWeight":"700"}],"headline-xl":["32px",{"lineHeight":"40px","letterSpacing":"-0.02em","fontWeight":"700"}],"headline-md":["18px",{"lineHeight":"26px","letterSpacing":"-0.01em","fontWeight":"600"}],"body-sm":["12px",{"lineHeight":"18px","letterSpacing":"0.01em","fontWeight":"400"}],"body-lg":["16px",{"lineHeight":"24px","letterSpacing":"0em","fontWeight":"400"}],"body-md":["14px",{"lineHeight":"22px","letterSpacing":"0em","fontWeight":"400"}],"headline-lg":["24px",{"lineHeight":"32px","letterSpacing":"-0.015em","fontWeight":"600"}],"code-lg":["14px",{"lineHeight":"22px","letterSpacing":"0em","fontWeight":"500"}],"label-md":["13px",{"lineHeight":"18px","letterSpacing":"0.01em","fontWeight":"500"}],"code-sm":["11px",{"lineHeight":"16px","letterSpacing":"0.02em","fontWeight":"500"}],"code-md":["13px",{"lineHeight":"20px","letterSpacing":"0em","fontWeight":"400"}]}}}}</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased select-none"><div class="min-h-screen flex flex-col"><header class="fixed top-0 right-0 h-10 bg-surface-container-lowest/90 backdrop-blur-xl z-40 flex items-center justify-between px-space-base shadow-[0_1px_8px_rgba(0,0,0,0.4)] left-0"><div class="flex items-center gap-space-sm"><div class="flex items-center gap-space-xs"><div class="w-3 h-3 rounded-full bg-surface-container-highest hover:bg-error transition-colors cursor-pointer"></div><div class="w-3 h-3 rounded-full bg-surface-container-highest hover:bg-secondary transition-colors cursor-pointer"></div><div class="w-3 h-3 rounded-full bg-surface-container-highest hover:bg-primary transition-colors cursor-pointer"></div></div><div class="flex items-center gap-space-xs px-space-xs py-space-2xs rounded bg-surface-container font-code-sm text-code-sm text-on-surface-variant"><span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>TAURI v2.1.0-OFFLINE</div></div><div class="flex items-center gap-space-sm"><div class="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant"><span class="material-symbols-outlined text-[14px] text-primary">bolt</span><span class="">118 WPM AVG</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></header><main class="w-full pt-10 px-gutter-desktop pb-space-lg flex-1 bg-surface"><div class="flex flex-col w-full">
+<!-- Top Telemetry & Hero Banner -->
+<div class="relative w-full rounded-xl bg-surface-container-low p-space-lg shadow-xl overflow-hidden mb-space-lg">
+<!-- Ambient orange conduit glow behind metrics -->
+<div class="absolute -right-16 -top-16 w-80 h-80 rounded-full bg-primary-container/10 blur-3xl pointer-events-none"></div>
+<div class="absolute left-1/3 -bottom-20 w-64 h-64 rounded-full bg-primary/5 blur-2xl pointer-events-none"></div>
+<div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-space-lg">
+<!-- Header Titles & Metadata -->
+<div class="max-w-2xl">
+<div class="flex items-center gap-space-xs mb-space-xs">
+<span class="inline-flex items-center gap-1.5 px-space-xs py-space-2xs rounded bg-surface-container-high text-primary font-code-sm text-code-sm tracking-wider uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse"></span>
+            SYLLABUS ARCHITECTURE // V2.4
+          </span>
+<span class="text-on-surface-variant font-code-sm text-code-sm">• DETERMINISTIC MOTOR PATHWAYS</span>
+</div>
+<h1 class="font-display-lg text-display-lg text-on-surface tracking-tight">
+          Curriculum &amp; Syllabus Directory
+        </h1>
+<p class="mt-space-xs font-body-md text-body-md text-on-surface-variant max-w-xl">
+          Master 260 deterministic neuromuscular modules from low-level home-row cadence to bare-metal kernel abstractions and multithreaded syntax conduits.
+        </p>
+<!-- Rolling Stats Inline Strip -->
+<div class="flex flex-wrap items-center gap-space-md mt-space-base">
+<div class="flex items-center gap-space-xs px-space-sm py-space-xs rounded bg-surface-container">
+<span class="material-symbols-outlined text-primary text-[18px]">speed</span>
+<div class="flex flex-col">
+<span class="font-code-sm text-code-sm text-on-surface-variant uppercase">Rolling Speed</span>
+<span class="font-code-md text-code-md text-on-surface font-semibold">54.2 WPM <span class="text-primary text-[11px] font-normal">(+3.4%)</span></span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs px-space-sm py-space-xs rounded bg-surface-container">
+<span class="material-symbols-outlined text-secondary text-[18px]">verified</span>
+<div class="flex flex-col">
+<span class="font-code-sm text-code-sm text-on-surface-variant uppercase">Code Accuracy</span>
+<span class="font-code-md text-code-md text-on-surface font-semibold">97.1% <span class="text-secondary text-[11px] font-normal">(&lt;0.4% Err)</span></span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs px-space-sm py-space-xs rounded bg-surface-container">
+<span class="material-symbols-outlined text-primary-container text-[18px]">radar</span>
+<div class="flex flex-col">
+<span class="font-code-sm text-code-sm text-on-surface-variant uppercase">Target Focus</span>
+<span class="font-code-md text-code-md text-primary font-medium">Level 3: Programming Symbols</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Curriculum Mastery Gauge Radial Card -->
+<div class="flex-shrink-0 flex items-center gap-space-base bg-surface-container p-space-base rounded-xl shadow-md min-w-[280px]">
+<div class="relative w-24 h-24 flex items-center justify-center">
+<svg class="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+<circle class="text-surface-container-highest" cx="50" cy="50" fill="transparent" r="42" stroke="currentColor" stroke-width="8"></circle>
+<circle class="text-primary-container transition-all duration-1000 ease-out" cx="50" cy="50" fill="transparent" r="42" stroke="currentColor" stroke-dasharray="263.89" stroke-dashoffset="199.0" stroke-linecap="round" stroke-width="8"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+<span class="font-headline-md text-headline-md text-on-surface leading-none">24.6%</span>
+<span class="font-code-sm text-[10px] text-on-surface-variant uppercase mt-1">Overall</span>
+</div>
+</div>
+<div class="flex flex-col">
+<span class="font-code-sm text-code-sm text-primary uppercase font-bold tracking-wider">Tier 3 Qualified</span>
+<span class="font-body-md text-body-md text-on-surface font-medium mt-0.5">64 / 260 Mastered</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-1">196 modules remaining</span>
+<div class="w-full bg-surface-container-lowest h-1.5 rounded-full overflow-hidden mt-2">
+<div class="bg-primary-container h-full w-[24.6%] rounded-full shadow-[0_0_8px_rgba(249,115,22,0.8)]"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Multifaceted Search & Control Bar -->
+<div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-sm mb-space-base bg-surface-container-lowest p-space-sm rounded-xl shadow-sm">
+<!-- Search Field -->
+<div class="relative flex-1 min-w-[280px]">
+<span class="material-symbols-outlined absolute left-space-sm top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
+<input class="w-full bg-surface-container-low text-on-surface font-code-md text-code-md pl-10 pr-space-base py-2 rounded-lg placeholder:text-on-surface-variant/50 focus:outline-none focus:bg-surface-container focus:ring-1 focus:ring-primary-container transition-all" id="lesson-search-input" placeholder="Search by token, symbol, concept, or language (e.g., pointers, ::, regex, rust)..." type="text">
+<span class="absolute right-space-sm top-1/2 -translate-y-1/2 font-code-sm text-[10px] px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant uppercase">⌘K</span>
+</div>
+<!-- Filter Buttons & Controls -->
+<div class="flex flex-wrap items-center gap-space-xs">
+<!-- Status Pills -->
+<div class="inline-flex rounded-lg bg-surface-container-low p-1 gap-1">
+<button class="px-space-sm py-1 rounded font-label-sm text-label-sm bg-primary-container text-on-primary-container font-semibold transition-all">All (50)</button>
+<button class="px-space-sm py-1 rounded font-label-sm text-label-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all">Completed (14)</button>
+<button class="px-space-sm py-1 rounded font-label-sm text-label-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all">Active (1)</button>
+<button class="px-space-sm py-1 rounded font-label-sm text-label-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all">Available (3)</button>
+<button class="px-space-sm py-1 rounded font-label-sm text-label-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all">Locked (32)</button>
+</div>
+<!-- Syntax Selector Dropdown -->
+<div class="relative">
+<button class="flex items-center gap-space-xs px-space-sm py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[16px] text-primary">code</span>
+<span class="">All Syntaxes (C, Rust, TS, Go)</span>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">expand_more</span>
+</button>
+</div>
+<!-- View Toggle -->
+<div class="flex items-center rounded-lg bg-surface-container-low p-1">
+<button class="p-1.5 rounded bg-surface-container text-primary shadow-sm" title="Grid View">
+<span class="material-symbols-outlined text-[18px]">grid_view</span>
+</button>
+<button class="p-1.5 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" title="Compact List View">
+<span class="material-symbols-outlined text-[18px]">format_list_bulleted</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Curriculum Levels Section -->
+<div class="flex flex-col gap-space-base mb-space-xl">
+<!-- Level 01: Collapsed & Mastered -->
+<div class="rounded-xl bg-surface-container-lowest p-space-base transition-all hover:bg-surface-container-low cursor-pointer">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-base">
+<div class="w-10 h-10 rounded-lg bg-secondary-container/20 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[24px]">verified</span>
+</div>
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-secondary font-bold tracking-widest uppercase">LEVEL 01 // FOUNDATION</span>
+<span class="px-2 py-0.5 rounded bg-secondary-container/20 text-secondary font-code-sm text-[10px] uppercase font-semibold">100% COMPLETE</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface">Home Row &amp; Core Alphanumerics</h3>
+</div>
+</div>
+<div class="flex items-center gap-space-lg">
+<div class="flex items-center gap-space-md font-code-sm text-code-sm">
+<div class="text-right">
+<span class="text-on-surface-variant block">SPEED</span>
+<span class="text-on-surface font-semibold">68.4 WPM</span>
+</div>
+<div class="text-right">
+<span class="text-on-surface-variant block">ACCURACY</span>
+<span class="text-on-surface font-semibold">99.1%</span>
+</div>
+<div class="text-right">
+<span class="text-on-surface-variant block">MODULES</span>
+<span class="text-primary font-semibold">20 / 20</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Level 02: Collapsed & Mastered -->
+<div class="rounded-xl bg-surface-container-lowest p-space-base transition-all hover:bg-surface-container-low cursor-pointer">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-base">
+<div class="w-10 h-10 rounded-lg bg-secondary-container/20 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[24px]">verified</span>
+</div>
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-secondary font-bold tracking-widest uppercase">LEVEL 02 // LOGIC</span>
+<span class="px-2 py-0.5 rounded bg-secondary-container/20 text-secondary font-code-sm text-[10px] uppercase font-semibold">100% COMPLETE</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface">Numbers, Numerical Logic &amp; Boolean Operators</h3>
+</div>
+</div>
+<div class="flex items-center gap-space-lg">
+<div class="flex items-center gap-space-md font-code-sm text-code-sm">
+<div class="text-right">
+<span class="text-on-surface-variant block">SPEED</span>
+<span class="text-on-surface font-semibold">59.8 WPM</span>
+</div>
+<div class="text-right">
+<span class="text-on-surface-variant block">ACCURACY</span>
+<span class="text-on-surface font-semibold">98.4%</span>
+</div>
+<div class="text-right">
+<span class="text-on-surface-variant block">MODULES</span>
+<span class="text-primary font-semibold">30 / 30</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Level 03: CURRENT ACTIVE TRACK (EXPANDED) -->
+<div class="rounded-xl bg-surface-container-low p-space-base shadow-2xl relative overflow-hidden">
+<!-- High-intensity incandescent top strip indicator -->
+<div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary-container via-primary to-primary-container"></div>
+<!-- Level 03 Header Strip -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-base pb-space-base">
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="inline-flex items-center gap-1.5 px-space-xs py-0.5 rounded bg-primary-container/20 text-primary font-code-sm text-code-sm font-bold uppercase">
+<span class="w-2 h-2 rounded-full bg-primary-container animate-ping"></span>
+              LEVEL 03 // ACTIVE ENGAGEMENT
+            </span>
+<span class="text-on-surface-variant font-code-sm text-code-sm">• 14 OF 50 MASTERED (28%)</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface mt-1">
+            Programming Symbols, Delimiters &amp; Pointers
+          </h2>
+</div>
+<div class="flex items-center gap-space-base">
+<!-- Mini Track Progress bar -->
+<div class="w-48 hidden sm:block">
+<div class="flex justify-between text-code-sm font-code-sm text-on-surface-variant mb-1">
+<span class="">PROGRESSION</span>
+<span class="text-primary font-bold">14 / 50</span>
+</div>
+<div class="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
+<div class="bg-primary-container h-full w-[28%] rounded-full shadow-[0_0_10px_rgba(249,115,22,0.9)]"></div>
+</div>
+</div>
+<button class="p-1 rounded text-on-surface hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[22px]">expand_less</span>
+</button>
+</div>
+</div>
+<!-- Target Pass Requirement Callout Banner -->
+<div class="flex items-center gap-space-sm p-space-sm rounded-lg bg-surface-container text-on-surface-variant font-code-sm text-code-sm mb-space-base">
+<span class="material-symbols-outlined text-primary text-[18px]">verified_user</span>
+<span class="text-on-surface font-medium">Clearance Criteria:</span>
+<span class="">Must sustain <span class="text-primary font-bold">&gt;= 95% Accuracy</span> &amp; <span class="text-primary font-bold">&gt;= 45 WPM</span> to unlock subsequent symbol branches.</span>
+</div>
+<!-- Grid of Lesson Cards for Level 3 -->
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-space-base">
+<!-- Lesson 3.12: Mastered Drill -->
+<div class="flex flex-col justify-between rounded-lg bg-surface-container-lowest p-space-base shadow-sm hover:bg-surface-container transition-all group">
+<div>
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant">MODULE 3.12</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-high text-secondary font-code-sm text-[10px] font-semibold">
+<span class="material-symbols-outlined text-[12px]">check_circle</span> MASTERED
+              </span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface group-hover:text-primary transition-colors">
+              Bitwise Operators (&amp;, |, ^, ~)
+            </h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1 line-clamp-2">
+              Low-latency bit manipulation masks, shifting logic, and one's complement toggles.
+            </p>
+<div class="my-space-sm p-space-xs rounded bg-surface-container-low font-code-sm text-code-sm text-primary/80 overflow-x-auto">
+<code>u32 mask = (1 &lt;&lt; 8) | (~FLAG &amp; 0xFF);</code>
+</div>
+</div>
+<div>
+<div class="flex items-center justify-between text-code-sm font-code-sm text-on-surface-variant py-space-xs">
+<span class="">RECORD: <strong class="text-on-surface">61 WPM</strong></span>
+<span class="">ACCURACY: <strong class="text-secondary">96.2%</strong></span>
+</div>
+<button class="w-full flex items-center justify-center gap-space-xs py-2 rounded-lg bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-primary-container hover:text-on-primary-container transition-all">
+<span class="material-symbols-outlined text-[16px]">replay</span>
+<span class="">Replay Drill</span>
+</button>
+</div>
+</div>
+<!-- Lesson 3.13: Mastered Drill -->
+<div class="flex flex-col justify-between rounded-lg bg-surface-container-lowest p-space-base shadow-sm hover:bg-surface-container transition-all group">
+<div>
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant">MODULE 3.13</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-high text-secondary font-code-sm text-[10px] font-semibold">
+<span class="material-symbols-outlined text-[12px]">check_circle</span> MASTERED
+              </span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface group-hover:text-primary transition-colors">
+              Pointers &amp; Addresses (*ptr, &amp;ref)
+            </h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1 line-clamp-2">
+              Memory referencing, double pointer dereferencing, and mutable borrows.
+            </p>
+<div class="my-space-sm p-space-xs rounded bg-surface-container-low font-code-sm text-code-sm text-primary/80 overflow-x-auto">
+<code>int *head = &amp;buffer[0]; **dptr = *head;</code>
+</div>
+</div>
+<div>
+<div class="flex items-center justify-between text-code-sm font-code-sm text-on-surface-variant py-space-xs">
+<span class="">RECORD: <strong class="text-on-surface">58 WPM</strong></span>
+<span class="">ACCURACY: <strong class="text-secondary">97.0%</strong></span>
+</div>
+<button class="w-full flex items-center justify-center gap-space-xs py-2 rounded-lg bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-primary-container hover:text-on-primary-container transition-all">
+<span class="material-symbols-outlined text-[16px]">replay</span>
+<span class="">Replay Drill</span>
+</button>
+</div>
+</div>
+<!-- Lesson 3.14: ACTIVE TARGET (High-Intensity Orange Highlight) -->
+<div class="relative flex flex-col justify-between rounded-lg bg-surface-container p-space-base shadow-2xl overflow-hidden shadow-[0_0_24px_rgba(249,115,22,0.25)]">
+<!-- Glowing highlight ribbon -->
+<div class="absolute inset-x-0 top-0 h-1 bg-primary-container"></div>
+<div class="absolute -right-8 -bottom-8 w-28 h-28 bg-primary-container/20 rounded-full blur-xl pointer-events-none"></div>
+<div>
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-code-sm text-code-sm text-primary font-bold">MODULE 3.14 // ACTIVE</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary-container text-on-primary-container font-code-sm text-[10px] font-bold shadow-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-on-primary-container animate-ping"></span> IN PROGRESS
+              </span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface">
+              Struct Arrow &amp; Member Access (-&gt;, .)
+            </h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+              Muscle memory drill for rapid hyphen-to-greater-than transitions and chained dot property navigation.
+            </p>
+<div class="my-space-sm p-space-xs rounded bg-surface-container-lowest font-code-sm text-code-sm text-primary overflow-x-auto shadow-inner">
+<code>ctx-&gt;frame_buffer-&gt;pixel.alpha = 0xFF;</code>
+</div>
+</div>
+<div class="mt-space-sm">
+<div class="flex items-center justify-between text-code-sm font-code-sm text-on-surface-variant py-space-xs bg-surface-container-low px-2 rounded mb-space-xs">
+<span class="">LAST ATTEMPT: <strong class="text-on-surface">42 WPM</strong></span>
+<span class="text-error font-medium">93.8% ACC (NEEDS 95%)</span>
+</div>
+<button class="w-full flex items-center justify-center gap-space-xs py-2.5 rounded-lg bg-primary-container text-on-primary-container font-label-md text-label-md font-bold hover:bg-tertiary-container shadow-[0_0_16px_rgba(249,115,22,0.4)] transition-all">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+<span class="">Resume Lesson 3.14 [Enter]</span>
+</button>
+</div>
+</div>
+<!-- Lesson 3.15: Unlocked / Next Ready -->
+<div class="flex flex-col justify-between rounded-lg bg-surface-container-lowest p-space-base shadow-sm hover:bg-surface-container transition-all group">
+<div>
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant">MODULE 3.15</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-high text-primary font-code-sm text-[10px] font-semibold">
+<span class="material-symbols-outlined text-[12px]">lock_open</span> READY
+              </span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface group-hover:text-primary transition-colors">
+              Nested JSON &amp; Map Braces ({}, [])
+            </h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1 line-clamp-2">
+              Balanced brace pairs, square brackets, associative map keys, and inline object literals.
+            </p>
+<div class="my-space-sm p-space-xs rounded bg-surface-container-low font-code-sm text-code-sm text-on-surface-variant overflow-x-auto">
+<code>payload: [{ id: 404, keys: ["x", "y"] }]</code>
+</div>
+</div>
+<div>
+<div class="flex items-center justify-between text-code-sm font-code-sm text-on-surface-variant py-space-xs">
+<span class="">TARGET SPEED: <strong class="text-on-surface">45 WPM</strong></span>
+<span class="">PASS ACC: <strong class="text-primary">95.0%</strong></span>
+</div>
+<button class="w-full flex items-center justify-center gap-space-xs py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-primary hover:text-on-primary transition-all">
+<span class="material-symbols-outlined text-[16px]">start</span>
+<span class="">Start Module</span>
+</button>
+</div>
+</div>
+<!-- Lesson 3.16: Locked -->
+<div class="flex flex-col justify-between rounded-lg bg-surface-container-lowest/60 p-space-base opacity-75 backdrop-blur-sm">
+<div>
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant/60">MODULE 3.16</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface-variant/60 font-code-sm text-[10px]">
+<span class="material-symbols-outlined text-[12px]">lock</span> LOCKED
+              </span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface-variant">
+              Regex &amp; Escape Sequences (\d+, \s*, [^a-z])
+            </h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant/70 mt-1 line-clamp-2">
+              Backslash escapes, character classes, lookahead delimiters, and non-capturing tokens.
+            </p>
+<div class="my-space-sm p-space-xs rounded bg-surface-container-lowest font-code-sm text-code-sm text-on-surface-variant/40 filter blur-[1.5px] select-none">
+<code>const RX = /^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$/;</code>
+</div>
+</div>
+<div>
+<div class="text-code-sm font-code-sm text-on-surface-variant/70 py-space-xs text-center">
+              Requires &gt;= 95% Acc on Lesson 3.14
+            </div>
+<button class="w-full flex items-center justify-center gap-space-xs py-2 rounded-lg bg-surface-container-low text-on-surface-variant/40 font-label-md text-label-md cursor-not-allowed" disabled="">
+<span class="material-symbols-outlined text-[16px]">lock</span>
+<span class="">Locked</span>
+</button>
+</div>
+</div>
+<!-- Lesson 3.17: Locked -->
+<div class="flex flex-col justify-between rounded-lg bg-surface-container-lowest/60 p-space-base opacity-75 backdrop-blur-sm">
+<div>
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant/60">MODULE 3.17</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface-variant/60 font-code-sm text-[10px]">
+<span class="material-symbols-outlined text-[12px]">lock</span> LOCKED
+              </span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface-variant">
+              Generics &amp; Lifetime Angles (&lt;'a, T: Clone&gt;)
+            </h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant/70 mt-1 line-clamp-2">
+              Rust trait bounds, generic type arguments, and lifetime annotations.
+            </p>
+<div class="my-space-sm p-space-xs rounded bg-surface-container-lowest font-code-sm text-code-sm text-on-surface-variant/40 filter blur-[1.5px] select-none">
+<code>fn sync&lt;'a, T: Send + Sync&gt;(buf: &amp;'a [T]) -&gt; Result&lt;()&gt;</code>
+</div>
+</div>
+<div>
+<div class="text-code-sm font-code-sm text-on-surface-variant/70 py-space-xs text-center">
+              Requires Lesson 3.16 completion
+            </div>
+<button class="w-full flex items-center justify-center gap-space-xs py-2 rounded-lg bg-surface-container-low text-on-surface-variant/40 font-label-md text-label-md cursor-not-allowed" disabled="">
+<span class="material-symbols-outlined text-[16px]">lock</span>
+<span class="">Locked</span>
+</button>
+</div>
+</div>
+<!-- Lesson 3.18: Locked -->
+<div class="flex flex-col justify-between rounded-lg bg-surface-container-lowest/60 p-space-base opacity-75 backdrop-blur-sm">
+<div>
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant/60">MODULE 3.18</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface-variant/60 font-code-sm text-[10px]">
+<span class="material-symbols-outlined text-[12px]">lock</span> LOCKED
+              </span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface-variant">
+              Scope Resolution &amp; Namespace (::, std::)
+            </h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant/70 mt-1 line-clamp-2">
+              C++ namespaces, Rust path separators, and nested enum variants.
+            </p>
+<div class="my-space-sm p-space-xs rounded bg-surface-container-lowest font-code-sm text-code-sm text-on-surface-variant/40 filter blur-[1.5px] select-none">
+<code>std::sync::Arc&lt;tokio::sync::Mutex&lt;State&gt;&gt;::new()</code>
+</div>
+</div>
+<div>
+<div class="text-code-sm font-code-sm text-on-surface-variant/70 py-space-xs text-center">
+              Requires Lesson 3.17 completion
+            </div>
+<button class="w-full flex items-center justify-center gap-space-xs py-2 rounded-lg bg-surface-container-low text-on-surface-variant/40 font-label-md text-label-md cursor-not-allowed" disabled="">
+<span class="material-symbols-outlined text-[16px]">lock</span>
+<span class="">Locked</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Level 04: Locked Accordion -->
+<div class="rounded-xl bg-surface-container-lowest/50 p-space-base opacity-60">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-base">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">lock</span>
+</div>
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant font-bold tracking-widest uppercase">LEVEL 04 // CASING CONDUITS</span>
+<span class="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-[10px] uppercase">LOCKED (0/40)</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface-variant">Shift Combos &amp; Identifiers (snake_case, camelCase, CONST_CAPS)</h3>
+</div>
+</div>
+<div class="flex items-center gap-space-md font-code-sm text-code-sm text-on-surface-variant">
+<span class="">Unlocks after Level 3 Mastery</span>
+</div>
+</div>
+</div>
+<!-- Level 05: Locked Accordion -->
+<div class="rounded-xl bg-surface-container-lowest/50 p-space-base opacity-60">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-base">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">lock</span>
+</div>
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant font-bold tracking-widest uppercase">LEVEL 05 // SYNTAX PRIMITIVES</span>
+<span class="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-[10px] uppercase">LOCKED (0/45)</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface-variant">Language Idioms, Keywords &amp; Control Flow</h3>
+</div>
+</div>
+<div class="flex items-center gap-space-md font-code-sm text-code-sm text-on-surface-variant">
+<span class="">Unlocks after Level 4 Mastery</span>
+</div>
+</div>
+</div>
+<!-- Level 06: Locked Accordion -->
+<div class="rounded-xl bg-surface-container-lowest/50 p-space-base opacity-60">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-base">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">lock</span>
+</div>
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant font-bold tracking-widest uppercase">LEVEL 06 // ALGORITHMIC FORMS</span>
+<span class="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-[10px] uppercase">LOCKED (0/35)</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface-variant">Data Structures, Pointer Trees &amp; Search Patterns</h3>
+</div>
+</div>
+<div class="flex items-center gap-space-md font-code-sm text-code-sm text-on-surface-variant">
+<span class="">Unlocks after Level 5 Mastery</span>
+</div>
+</div>
+</div>
+<!-- Level 07: Apex Tier (Locked) -->
+<div class="rounded-xl bg-surface-container-lowest/40 p-space-base opacity-50">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-base">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-primary-container">
+<span class="material-symbols-outlined text-[20px]">terminal</span>
+</div>
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-primary font-bold tracking-widest uppercase">LEVEL 07 // APEX TIER</span>
+<span class="px-2 py-0.5 rounded bg-primary-container/20 text-primary font-code-sm text-[10px] uppercase">PRODUCTION KERNELS</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface-variant">Real Open-Source Codebases (Linux Kernel, Tokio, React Core)</h3>
+</div>
+</div>
+<div class="flex items-center gap-space-md font-code-sm text-code-sm text-on-surface-variant">
+<span class="">Final Certification Track (0/40)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Telemetry: Symbol Cadence & Latency Inspector -->
+<div class="rounded-xl bg-surface-container-low p-space-base shadow-xl">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-sm mb-space-base">
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px]">query_stats</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Symbol Latency Telemetry</h3>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+          Real-time neuromuscular cadence distribution across key programming tokens. Hesitations (&gt;180ms) indicate target friction zones.
+        </p>
+</div>
+<!-- Cadence Legend -->
+<div class="flex items-center gap-space-base font-code-sm text-code-sm">
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-secondary"></span>
+<span class="text-on-surface-variant">Fast (&lt;100ms)</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-primary"></span>
+<span class="text-on-surface-variant">Optimal (100–160ms)</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-primary-container"></span>
+<span class="text-on-surface-variant">Hesitation (&gt;180ms)</span>
+</div>
+</div>
+</div>
+<!-- Inline SVG Bar Telemetry Chart -->
+<div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-space-sm">
+<!-- Token 1: -> -->
+<div class="flex flex-col items-center bg-surface-container p-space-sm rounded-lg">
+<span class="font-code-lg text-code-lg text-primary font-bold mb-2">-&gt;</span>
+<div class="w-full flex items-end justify-center h-28 bg-surface-container-lowest rounded p-1">
+<div class="w-6 bg-primary-container rounded-t shadow-[0_0_8px_rgba(249,115,22,0.6)]" style="height: 84%;"></div>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold mt-2">214ms</span>
+<span class="font-code-sm text-[10px] text-error">HESITATION</span>
+</div>
+<!-- Token 2: :: -->
+<div class="flex flex-col items-center bg-surface-container p-space-sm rounded-lg">
+<span class="font-code-lg text-code-lg text-on-surface font-bold mb-2">::</span>
+<div class="w-full flex items-end justify-center h-28 bg-surface-container-lowest rounded p-1">
+<div class="w-6 bg-primary rounded-t" style="height: 48%;"></div>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold mt-2">122ms</span>
+<span class="font-code-sm text-[10px] text-on-surface-variant">STABLE</span>
+</div>
+<!-- Token 3: &mut -->
+<div class="flex flex-col items-center bg-surface-container p-space-sm rounded-lg">
+<span class="font-code-lg text-code-lg text-primary font-bold mb-2">&amp;mut</span>
+<div class="w-full flex items-end justify-center h-28 bg-surface-container-lowest rounded p-1">
+<div class="w-6 bg-primary-container rounded-t shadow-[0_0_8px_rgba(249,115,22,0.6)]" style="height: 76%;"></div>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold mt-2">192ms</span>
+<span class="font-code-sm text-[10px] text-error">FRICTION</span>
+</div>
+<!-- Token 4: => -->
+<div class="flex flex-col items-center bg-surface-container p-space-sm rounded-lg">
+<span class="font-code-lg text-code-lg text-on-surface font-bold mb-2">=&gt;</span>
+<div class="w-full flex items-end justify-center h-28 bg-surface-container-lowest rounded p-1">
+<div class="w-6 bg-secondary rounded-t" style="height: 36%;"></div>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold mt-2">92ms</span>
+<span class="font-code-sm text-[10px] text-secondary">OPTIMAL</span>
+</div>
+<!-- Token 5: != -->
+<div class="flex flex-col items-center bg-surface-container p-space-sm rounded-lg">
+<span class="font-code-lg text-code-lg text-on-surface font-bold mb-2">!=</span>
+<div class="w-full flex items-end justify-center h-28 bg-surface-container-lowest rounded p-1">
+<div class="w-6 bg-secondary rounded-t" style="height: 32%;"></div>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold mt-2">84ms</span>
+<span class="font-code-sm text-[10px] text-secondary">FLUID</span>
+</div>
+<!-- Token 6: <T> -->
+<div class="flex flex-col items-center bg-surface-container p-space-sm rounded-lg">
+<span class="font-code-lg text-code-lg text-on-surface font-bold mb-2">&lt;T&gt;</span>
+<div class="w-full flex items-end justify-center h-28 bg-surface-container-lowest rounded p-1">
+<div class="w-6 bg-primary rounded-t" style="height: 56%;"></div>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold mt-2">144ms</span>
+<span class="font-code-sm text-[10px] text-on-surface-variant">NOMINAL</span>
+</div>
+<!-- Token 7: {} -->
+<div class="flex flex-col items-center bg-surface-container p-space-sm rounded-lg">
+<span class="font-code-lg text-code-lg text-on-surface font-bold mb-2">{}</span>
+<div class="w-full flex items-end justify-center h-28 bg-surface-container-lowest rounded p-1">
+<div class="w-6 bg-secondary rounded-t" style="height: 30%;"></div>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface font-semibold mt-2">78ms</span>
+<span class="font-code-sm text-[10px] text-secondary">MASTERED</span>
+</div>
+</div>
+</div>
+<!-- Inline Micro-Interactions Script -->
+<script>
+    // Search keyboard shortcut listener
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        const searchInput = document.getElementById('lesson-search-input');
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        }
+      }
+    });
+
+    // Enter key resume lesson shortcut
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && document.activeElement.tagName !== 'INPUT') {
+        const activeCard = document.querySelector('[data-path="current-lesson"]');
+        if (activeCard) {
+          activeCard.click();
+        }
+      }
+    });
+  </script>
+</div></main></div>
+
+</body></html>
