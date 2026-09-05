@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 
 import { getDb } from "./client";
 import {
@@ -6,6 +6,7 @@ import {
   lessonAttempts,
   lessonProgress,
   lessons,
+  settings,
   trainingSessions,
 } from "./schema";
 import {
@@ -174,6 +175,64 @@ export const attemptsRepo = {
       .limit(limit);
     return rows.map((row) => AttemptRowSchema.parse(row));
   },
+
+  /**
+   * Distinct local calendar days with at least one completed attempt
+   * (the streak walk's input; the list is tiny — one row per active day).
+   */
+  async distinctActiveDays(): Promise<string[]> {
+    const db = await getDb();
+    const rows = await db
+      .select({ day: DAY_BUCKET })
+      .from(lessonAttempts)
+      .where(eq(lessonAttempts.completed, true))
+      .groupBy(DAY_BUCKET)
+      .orderBy(asc(DAY_BUCKET));
+    return rows.map((row) => String(row.day));
+  },
+
+  /** Total number of attempt rows (optionally within a finished_at window). */
+  async countAll(fromTs: number | null = null): Promise<number> {    const db = await getDb();
+    const rows = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(lessonAttempts)
+      .where(fromTs === null ? undefined : gte(lessonAttempts.finishedAt, fromTs));
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  /**
+   * One page of the §24 raw history ledger, newest first. Never a "best
+   * only" projection — every attempt row is returned verbatim.
+   */
+  async page(
+    page: number,
+    pageSize: number,
+    fromTs: number | null = null,
+  ): Promise<AttemptRow[]> {
+    const db = await getDb();
+    const rows = await db
+      .select(ATTEMPT_ROW_COLUMNS)
+      .from(lessonAttempts)
+      .where(fromTs === null ? undefined : gte(lessonAttempts.finishedAt, fromTs))
+      .orderBy(desc(lessonAttempts.finishedAt))
+      .limit(pageSize)
+      .offset(page * pageSize);
+    return rows.map((row) => AttemptRowSchema.parse(row));
+  },
+
+  /**
+   * The FULL filtered attempt set (CSV export §24) — every row of the
+   * filtered window, no aggregation, no limit.
+   */
+  async allFiltered(fromTs: number | null = null): Promise<AttemptRow[]> {
+    const db = await getDb();
+    const rows = await db
+      .select(ATTEMPT_ROW_COLUMNS)
+      .from(lessonAttempts)
+      .where(fromTs === null ? undefined : gte(lessonAttempts.finishedAt, fromTs))
+      .orderBy(desc(lessonAttempts.finishedAt));
+    return rows.map((row) => AttemptRowSchema.parse(row));
+  },
 };
 
 /* ---------------------------------------------------------------------------
@@ -251,6 +310,25 @@ export const keyStatsRepo = {
   async all(): Promise<KeyStatRow[]> {
     const db = await getDb();
     const rows = await db.select().from(keyStatistics);
+    return rows.map((row) => KeyStatRowSchema.parse(row));
+  },
+
+  /**
+   * The weak-key SQL (§14/§15 feed): rows with at least `minPresses`
+   * samples, worst accuracy first (ties: more misses first). The
+   * `weaknessService` maps these to its shared `WeakKey` shape.
+   */
+  async weakKeys(minPresses: number, limit: number): Promise<KeyStatRow[]> {
+    const db = await getDb();
+    const rows = await db
+      .select()
+      .from(keyStatistics)
+      .where(gte(keyStatistics.totalPresses, minPresses))
+      .orderBy(
+        sql`(${keyStatistics.correctPresses} + 0.0) / ${keyStatistics.totalPresses} asc`,
+        desc(keyStatistics.incorrectPresses),
+      )
+      .limit(limit);
     return rows.map((row) => KeyStatRowSchema.parse(row));
   },
 };
@@ -331,6 +409,72 @@ export const progressRepo = {
         ),
       );
   },
+
+  /* ------------------------- §12 aggregate reads ------------------------- */
+
+  /** Count of completed lessons (GROUP BY is wasted on a scalar — COUNT). */
+  async countByStatus(status: "locked" | "available" | "completed"): Promise<number> {
+    const db = await getDb();
+    const rows = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(lessonProgress)
+      .where(eq(lessonProgress.status, status));
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  /** Completed lesson count per curriculum level (SQL GROUP BY, §12). */
+  async completedByLevel(): Promise<Map<number, number>> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        level: lessons.level,
+        completed: sql<number>`count(*)`,
+      })
+      .from(lessonProgress)
+      .innerJoin(lessons, eq(lessons.id, lessonProgress.lessonId))
+      .where(eq(lessonProgress.status, "completed"))
+      .groupBy(lessons.level);
+    return new Map(rows.map((row) => [Number(row.level), Number(row.completed)]));
+  },
+
+  /** Lesson ids with a given status (curriculum order applied by callers). */
+  async lessonIdsByStatus(
+    status: "locked" | "available" | "completed",
+  ): Promise<string[]> {
+    const db = await getDb();
+    const rows = await db
+      .select({ lessonId: lessonProgress.lessonId })
+      .from(lessonProgress)
+      .where(eq(lessonProgress.status, status));
+    return rows.map((row) => row.lessonId);
+  },
+
+  /** Most recently completed lesson row (max completed_at), §12. */
+  async lastCompleted(): Promise<LessonProgress | null> {
+    const db = await getDb();
+    const rows = await db
+      .select()
+      .from(lessonProgress)
+      .where(eq(lessonProgress.status, "completed"))
+      .orderBy(desc(lessonProgress.completedAt))
+      .limit(1);
+    return rows[0] ? LessonProgressSchema.parse(rows[0]) : null;
+  },
+
+  /** Lessons completed since the given timestamp (daily goal §18 actual). */
+  async countCompletedSince(fromTs: number): Promise<number> {
+    const db = await getDb();
+    const rows = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(lessonProgress)
+      .where(
+        and(
+          eq(lessonProgress.status, "completed"),
+          gte(lessonProgress.completedAt, fromTs),
+        ),
+      );
+    return Number(rows[0]?.count ?? 0);
+  },
 };
 
 /* ---------------------------------------------------------------------------
@@ -358,6 +502,347 @@ export const sessionsRepo = {
       .update(trainingSessions)
       .set({ endedAt, durationMs, charsTyped })
       .where(eq(trainingSessions.id, id));
+  },
+
+  /**
+   * Aggregated training time + characters since `fromTs` (§18 daily
+   * actuals). SUM ignores NULL durations (still-open rows) — abandoned
+   * sessions ARE counted: their typing happened.
+   */
+  async totalsSince(fromTs: number): Promise<{ durationMs: number; chars: number }> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        durationMs: sql<number>`coalesce(sum(${trainingSessions.durationMs}), 0)`,
+        chars: sql<number>`coalesce(sum(${trainingSessions.charsTyped}), 0)`,
+      })
+      .from(trainingSessions)
+      .where(gte(trainingSessions.startedAt, fromTs));
+    return {
+      durationMs: Number(rows[0]?.durationMs ?? 0),
+      chars: Number(rows[0]?.chars ?? 0),
+    };
+  },
+};
+
+/* ---------------------------------------------------------------------------
+ * settings (§20 — key/value; Phase 5 stores the persisted best streak)
+ * ------------------------------------------------------------------------- */
+
+export const settingsRepo = {
+  async get(key: string): Promise<unknown | null> {
+    const db = await getDb();
+    const rows = await db
+      .select({ value: settings.value })
+      .from(settings)
+      .where(eq(settings.key, key))
+      .limit(1);
+    return rows[0]?.value ?? null;
+  },
+
+  async set(key: string, value: unknown, now = Date.now()): Promise<void> {
+    const db = await getDb();
+    await db
+      .insert(settings)
+      .values({ key, value, updatedAt: now })
+      .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: now } });
+  },
+};
+
+/* ---------------------------------------------------------------------------
+ * statsRepo — §24/§25 chart aggregates. Every series is computed INSIDE
+ * SQLite (GROUP BY / AVG / MAX) so charts never load the whole attempts
+ * table into JS. All metric aggregates are scoped to COMPLETED attempts
+ * (§2 design decision: lifetime figures mean "completed attempts").
+ * ------------------------------------------------------------------------- */
+
+/** Local-time day bucket of a finished_at timestamp (SQLite date modifier). */
+const DAY_BUCKET = sql<string>`date(${lessonAttempts.finishedAt} / 1000, 'unixepoch', 'localtime')`;
+
+/** The §8 gate as a SQL expression (accuracy >= 95 AND wpm > 45). */
+const GATE_PASSED = sql<number>`case when ${lessonAttempts.accuracy} >= 95 and ${lessonAttempts.wpm} > 45 then 1 else 0 end`;
+
+export type StatsRange = "30d" | "90d" | "all";
+
+/** Start-of-window epoch ms for a range (null = unbounded). */
+export function rangeStart(range: StatsRange, now = Date.now()): number | null {
+  switch (range) {
+    case "30d":
+      return now - 30 * 86_400_000;
+    case "90d":
+      return now - 90 * 86_400_000;
+    case "all":
+      return null;
+  }
+}
+
+export interface AttemptOverview {
+  attempts: number;
+  avgWpm: number;
+  avgAccuracy: number;
+  bestWpm: number;
+  bestWpmLessonId: string | null;
+  totalDurationMs: number;
+  /** correct + incorrect characters across completed attempts. */
+  keysTyped: number;
+}
+
+export interface DayBucket {
+  /** Local-time calendar date, "YYYY-MM-DD". */
+  day: string;
+  attempts: number;
+  avgWpm: number;
+  bestWpm: number;
+  avgAccuracy: number;
+}
+
+export interface AttemptPoint {
+  id: number;
+  finishedAt: number;
+  wpm: number;
+  accuracy: number;
+  lessonId: string;
+  attemptNumber: number;
+}
+
+export interface LevelMean {
+  level: number;
+  attempts: number;
+  avgWpm: number;
+}
+
+export interface ImprovementBucket {
+  /** "1" | "2" | "3" | "4" | "5+" */
+  bucket: string;
+  attempts: number;
+  avgWpm: number;
+}
+
+export const statsRepo = {
+  /** Lifetime aggregate over completed attempts (one GROUP-less scan). */
+  async overview(fromTs: number | null = null): Promise<AttemptOverview> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        attempts: sql<number>`count(*)`,
+        avgWpm: sql<number>`coalesce(avg(${lessonAttempts.wpm}), 0)`,
+        avgAccuracy: sql<number>`coalesce(avg(${lessonAttempts.accuracy}), 0)`,
+        bestWpm: sql<number>`coalesce(max(${lessonAttempts.wpm}), 0)`,
+        totalDurationMs: sql<number>`coalesce(sum(${lessonAttempts.durationMs}), 0)`,
+        keysTyped: sql<number>`coalesce(sum(${lessonAttempts.correctChars} + ${lessonAttempts.incorrectChars}), 0)`,
+      })
+      .from(lessonAttempts)
+      .where(
+        fromTs === null
+          ? eq(lessonAttempts.completed, true)
+          : and(eq(lessonAttempts.completed, true), gte(lessonAttempts.finishedAt, fromTs)),
+      );
+    const row = rows[0];
+    const best = await this.bestAttempt(fromTs);
+    return {
+      attempts: Number(row?.attempts ?? 0),
+      avgWpm: Number(row?.avgWpm ?? 0),
+      avgAccuracy: Number(row?.avgAccuracy ?? 0),
+      bestWpm: Number(row?.bestWpm ?? 0),
+      bestWpmLessonId: best?.lessonId ?? null,
+      totalDurationMs: Number(row?.totalDurationMs ?? 0),
+      keysTyped: Number(row?.keysTyped ?? 0),
+    };
+  },
+
+  /** The completed attempt with the highest WPM (statistics hero chip). */
+  async bestAttempt(
+    fromTs: number | null = null,
+  ): Promise<{ wpm: number; lessonId: string; finishedAt: number } | null> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        wpm: lessonAttempts.wpm,
+        lessonId: lessonAttempts.lessonId,
+        finishedAt: lessonAttempts.finishedAt,
+      })
+      .from(lessonAttempts)
+      .where(
+        fromTs === null
+          ? eq(lessonAttempts.completed, true)
+          : and(eq(lessonAttempts.completed, true), gte(lessonAttempts.finishedAt, fromTs)),
+      )
+      .orderBy(desc(lessonAttempts.wpm))
+      .limit(1);
+    const row = rows[0];
+    return row ? { wpm: Number(row.wpm), lessonId: row.lessonId, finishedAt: row.finishedAt } : null;
+  },
+
+  /** Mean of the last `limit` completed attempts (§2 "recent" figure). */
+  async recentMean(
+    limit = 10,
+  ): Promise<{ wpm: number; accuracy: number; count: number } | null> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        wpm: sql<number>`avg(wpm)`,
+        accuracy: sql<number>`avg(accuracy)`,
+        count: sql<number>`count(*)`,
+      })
+      .from(
+        db
+          .select({ wpm: lessonAttempts.wpm, accuracy: lessonAttempts.accuracy })
+          .from(lessonAttempts)
+          .where(eq(lessonAttempts.completed, true))
+          .orderBy(desc(lessonAttempts.finishedAt))
+          .limit(limit)
+          .as("recent"),
+      );
+    const row = rows[0];
+    if (!row || Number(row.count) === 0) return null;
+    return { wpm: Number(row.wpm), accuracy: Number(row.accuracy), count: Number(row.count) };
+  },
+
+  /** Per-day buckets (local time): mean/best WPM + mean accuracy. */
+  async dailySeries(fromTs: number | null = null): Promise<DayBucket[]> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        day: DAY_BUCKET,
+        attempts: sql<number>`count(*)`,
+        avgWpm: sql<number>`avg(${lessonAttempts.wpm})`,
+        bestWpm: sql<number>`max(${lessonAttempts.wpm})`,
+        avgAccuracy: sql<number>`avg(${lessonAttempts.accuracy})`,
+      })
+      .from(lessonAttempts)
+      .where(
+        fromTs === null
+          ? eq(lessonAttempts.completed, true)
+          : and(eq(lessonAttempts.completed, true), gte(lessonAttempts.finishedAt, fromTs)),
+      )
+      .groupBy(DAY_BUCKET)
+      .orderBy(asc(DAY_BUCKET));
+    return rows.map((row) => ({
+      day: String(row.day),
+      attempts: Number(row.attempts),
+      avgWpm: Number(row.avgWpm),
+      bestWpm: Number(row.bestWpm),
+      avgAccuracy: Number(row.avgAccuracy),
+    }));
+  },
+
+  /** Per-attempt points (the design's "session avg" scatter/line). */
+  async attemptPoints(fromTs: number | null = null): Promise<AttemptPoint[]> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        id: lessonAttempts.id,
+        finishedAt: lessonAttempts.finishedAt,
+        wpm: lessonAttempts.wpm,
+        accuracy: lessonAttempts.accuracy,
+        lessonId: lessonAttempts.lessonId,
+        attemptNumber: lessonAttempts.attemptNumber,
+      })
+      .from(lessonAttempts)
+      .where(
+        fromTs === null
+          ? eq(lessonAttempts.completed, true)
+          : and(eq(lessonAttempts.completed, true), gte(lessonAttempts.finishedAt, fromTs)),
+      )
+      .orderBy(asc(lessonAttempts.finishedAt));
+    return rows.map((row) => ({
+      id: Number(row.id),
+      finishedAt: Number(row.finishedAt),
+      wpm: Number(row.wpm),
+      accuracy: Number(row.accuracy),
+      lessonId: row.lessonId,
+      attemptNumber: Number(row.attemptNumber),
+    }));
+  },
+
+  /** Mean WPM per curriculum level (PER LEVEL bar chart). */
+  async perLevelMeans(fromTs: number | null = null): Promise<LevelMean[]> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        level: lessons.level,
+        attempts: sql<number>`count(*)`,
+        avgWpm: sql<number>`avg(${lessonAttempts.wpm})`,
+      })
+      .from(lessonAttempts)
+      .innerJoin(lessons, eq(lessons.id, lessonAttempts.lessonId))
+      .where(
+        fromTs === null
+          ? eq(lessonAttempts.completed, true)
+          : and(eq(lessonAttempts.completed, true), gte(lessonAttempts.finishedAt, fromTs)),
+      )
+      .groupBy(lessons.level)
+      .orderBy(asc(lessons.level));
+    return rows.map((row) => ({
+      level: Number(row.level),
+      attempts: Number(row.attempts),
+      avgWpm: Number(row.avgWpm),
+    }));
+  },
+
+  /**
+   * "Improvement across attempts": mean WPM by attempt-number bucket over
+   * lessons with at least 3 completed attempts (thin one-off lessons would
+   * drown the trend). Buckets: attempts 1, 2, 3, 4, 5+.
+   */
+  async improvementBuckets(): Promise<ImprovementBucket[]> {
+    const db = await getDb();
+    const multiLesson = db
+      .select({ lessonId: lessonAttempts.lessonId })
+      .from(lessonAttempts)
+      .where(eq(lessonAttempts.completed, true))
+      .groupBy(lessonAttempts.lessonId)
+      .having(sql`count(*) >= 3`)
+      .as("multi_lesson");
+    const rows = await db
+      .select({
+        bucket: sql<string>`case when ${lessonAttempts.attemptNumber} <= 4 then cast(${lessonAttempts.attemptNumber} as text) else '5+' end`,
+        bucketOrder: sql<number>`case when ${lessonAttempts.attemptNumber} <= 4 then ${lessonAttempts.attemptNumber} else 5 end`,
+        attempts: sql<number>`count(*)`,
+        avgWpm: sql<number>`avg(${lessonAttempts.wpm})`,
+      })
+      .from(lessonAttempts)
+      .innerJoin(multiLesson, eq(multiLesson.lessonId, lessonAttempts.lessonId))
+      .where(eq(lessonAttempts.completed, true))
+      .groupBy(sql`bucket`, sql`bucketOrder`)
+      .orderBy(sql`bucketOrder`);
+    return rows.map((row) => ({
+      bucket: String(row.bucket),
+      attempts: Number(row.attempts),
+      avgWpm: Number(row.avgWpm),
+    }));
+  },
+
+  /** First-try pass rate (§26 read-out): of completed attempts numbered 1,
+   * the fraction that clears the §8 gate. */
+  async firstTryPassRate(): Promise<{ firstTries: number; passed: number }> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        firstTries: sql<number>`count(*)`,
+        passed: sql<number>`coalesce(sum(${GATE_PASSED}), 0)`,
+      })
+      .from(lessonAttempts)
+      .where(
+        and(eq(lessonAttempts.completed, true), eq(lessonAttempts.attemptNumber, 1)),
+      );
+    return {
+      firstTries: Number(rows[0]?.firstTries ?? 0),
+      passed: Number(rows[0]?.passed ?? 0),
+    };
+  },
+
+  /** Database file size in bytes (footer read-out; null when unavailable). */
+  async dbSizeBytes(): Promise<number | null> {
+    try {
+      const db = await getDb();
+      const rows = await db
+        .select({ size: sql<number>`page_count * page_size` })
+        .from(sql`pragma_page_count(), pragma_page_size()`);
+      return rows[0] ? Number(rows[0].size) : null;
+    } catch {
+      return null;
+    }
   },
 };
 

@@ -483,6 +483,14 @@ export default function TypingSessionScreen() {
     }
   }, [phase, sessionParams, startLesson]);
 
+  // §3.7 abandon path: leaving an ACTIVE session via any navigation closes
+  // its training_sessions row and writes no attempt row.
+  useEffect(() => {
+    return () => {
+      void useSessionStore.getState().abandon();
+    };
+  }, []);
+
   // Global keydown listener — active only while a session is running.
   useEffect(() => {
     if (phase !== "running") return;
