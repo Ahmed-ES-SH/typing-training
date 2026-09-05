@@ -22,7 +22,6 @@ export interface FirstTryRate {
 
 /** Everything the Statistics screen charts, for ONE range. */
 export interface RangeData {
-  overview: AttemptOverview;
   daily: DayBucket[];
   points: AttemptPoint[];
   perLevelMeans: LevelMean[];
@@ -41,7 +40,14 @@ interface StatsState {
   range: StatsRange;
   /** The PER LEVEL pill switches the WPM chart's view mode, not the window. */
   perLevelMode: boolean;
+  /**
+   * LIFETIME aggregate (plan §3.5): the hero chips are all-time so they can
+   * never contradict the raw ledger; only the charts are range-filtered.
+   */
+  lifetime: AttemptOverview | null;
   data: Partial<Record<StatsRange, RangeData>>;
+  /** Bumped on every invalidate so chrome like the TopBar can re-read. */
+  version: number;
   loading: boolean;
   error: string | null;
   history: HistoryPage | null;
@@ -56,7 +62,9 @@ interface StatsState {
 export const useStatsStore = create<StatsState>((set, get) => ({
   range: "30d",
   perLevelMode: false,
+  lifetime: null,
   data: {},
+  version: 0,
   loading: false,
   error: null,
   history: null,
@@ -75,17 +83,21 @@ export const useStatsStore = create<StatsState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const from = rangeStart(range);
-      const [overview, daily, points, perLevelMeans, firstTry] = await Promise.all([
-        statsRepo.overview(from),
+      const needLifetime = force || get().lifetime === null;
+      const [lifetime, daily, points, perLevelMeans, firstTry] = await Promise.all([
+        needLifetime
+          ? statsRepo.overview(null)
+          : Promise.resolve(get().lifetime as AttemptOverview),
         statsRepo.dailySeries(from),
         statsRepo.attemptPoints(from),
         statsRepo.perLevelMeans(from),
         statsRepo.firstTryPassRate(),
       ]);
       set({
+        lifetime,
         data: {
           ...get().data,
-          [range]: { overview, daily, points, perLevelMeans, firstTry },
+          [range]: { daily, points, perLevelMeans, firstTry },
         },
         loading: false,
         error: null,
@@ -119,7 +131,7 @@ export const useStatsStore = create<StatsState>((set, get) => ({
   },
 
   invalidate: () => {
-    set({ data: {} });
+    set({ data: {}, version: get().version + 1 });
     // The visible range re-queries immediately; other ranges re-query the
     // next time they are selected.
     void get().load(true);

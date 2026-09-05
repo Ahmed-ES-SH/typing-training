@@ -263,6 +263,7 @@ export default function StatisticsScreen() {
   const range = useStatsStore((s) => s.range);
   const perLevelMode = useStatsStore((s) => s.perLevelMode);
   const data = useStatsStore((s) => s.data);
+  const lifetime = useStatsStore((s) => s.lifetime);
   const loading = useStatsStore((s) => s.loading);
   const error = useStatsStore((s) => s.error);
   const history = useStatsStore((s) => s.history);
@@ -311,10 +312,10 @@ export default function StatisticsScreen() {
   }, [rangeData]);
 
   const bestLessonLabel = useMemo(() => {
-    const lessonId = rangeData?.overview.bestWpmLessonId ?? null;
+    const lessonId = lifetime?.bestWpmLessonId ?? null;
     const lesson = lessonId ? getLesson(lessonId) : null;
     return lesson ? `${moduleNumber(lesson.level, lesson.orderIndex)} drill` : "—";
-  }, [rangeData]);
+  }, [lifetime]);
 
   const exportCsv = async () => {
     setExporting(true);
@@ -369,7 +370,7 @@ export default function StatisticsScreen() {
               Statistics &amp; Key Telemetry
             </h1>
             <p className="mt-1 max-w-xl font-body-md text-body-md text-on-surface-variant">
-              Aggregated from {fmtInt(rangeData?.overview.attempts ?? 0)} local
+              Aggregated from {fmtInt(lifetime?.attempts ?? 0)} all-time local
               attempts. Raw history is never discarded — every chart can be
               traced back to individual sessions.
             </p>
@@ -406,29 +407,30 @@ export default function StatisticsScreen() {
             </div>
           </div>
 
-          {/* Aggregate chips */}
+          {/* Aggregate chips — LIFETIME values (plan §3.5) so they can never
+              contradict the raw ledger below; only the charts are filtered. */}
           <div className="grid grid-cols-2 gap-space-md lg:grid-cols-4">
             <StatCard
               icon="speed"
-              label="Best WPM"
-              value={fmt1(rangeData?.overview.bestWpm ?? 0)}
+              label="Best WPM (all-time)"
+              value={fmt1(lifetime?.bestWpm ?? 0)}
               note={bestLessonLabel}
             />
             <StatCard
               icon="verified"
-              label="Avg Accuracy"
-              value={fmt1(rangeData?.overview.avgAccuracy ?? 0)}
+              label="Avg Accuracy (all-time)"
+              value={fmt1(lifetime?.avgAccuracy ?? 0)}
               unit="%"
             />
             <StatCard
               icon="history"
-              label="Total Attempts"
-              value={fmtInt(rangeData?.overview.attempts ?? 0)}
+              label="Total Attempts (all-time)"
+              value={fmtInt(lifetime?.attempts ?? 0)}
             />
             <StatCard
               icon="schedule"
-              label="Trained"
-              value={fmtDuration(rangeData?.overview.totalDurationMs ?? 0)}
+              label="Trained (all-time)"
+              value={fmtDuration(lifetime?.totalDurationMs ?? 0)}
             />
           </div>
         </div>

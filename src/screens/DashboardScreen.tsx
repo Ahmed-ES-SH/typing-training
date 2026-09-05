@@ -224,6 +224,9 @@ export default function DashboardScreen() {
   }
 
   const { progress, position, streak, today, weakKeys, recent } = data;
+  // The drill card's count must match the chips it actually renders (the
+  // radar separately shows the full top-5 from the shared selector).
+  const drillChips = weakKeys.slice(0, 4);
   const currentLesson = position.currentLesson;
   const currentProgress = currentLesson ? progressMap[currentLesson.id] : undefined;
   const masteredRemaining = progress.totalLessons - progress.completedLessons;
@@ -524,7 +527,7 @@ export default function DashboardScreen() {
                 Weakness Drill
               </h3>
               <span className="font-code-sm text-[10px] font-bold uppercase tracking-wider text-outline">
-                {weakKeys.length} targets
+                {drillChips.length} targets
               </span>
             </div>
             <p className="font-code-sm text-code-sm text-on-surface-variant">
@@ -536,7 +539,7 @@ export default function DashboardScreen() {
               </p>
             ) : (
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {weakKeys.slice(0, 4).map((weak) => (
+                {drillChips.map((weak) => (
                   <span
                     key={`${weak.key}-${weak.shiftRequired ? "s" : "b"}`}
                     className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-surface-container-highest/60 bg-surface-container-lowest px-1.5 font-code-md text-code-md font-bold text-on-surface"
