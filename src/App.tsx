@@ -1,50 +1,39 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import type { ComponentType } from "react";
+
+import { Shell } from "./components/Shell";
+import { TopBar } from "./components/TopBar";
+import type { ScreenId } from "./lib/screens";
+import CustomLessonsScreen from "./screens/CustomLessonsScreen";
+import DashboardScreen from "./screens/DashboardScreen";
+import LessonResultsScreen from "./screens/LessonResultsScreen";
+import LessonsScreen from "./screens/LessonsScreen";
+import SettingsScreen from "./screens/SettingsScreen";
+import StatisticsScreen from "./screens/StatisticsScreen";
+import TypingSessionScreen from "./screens/TypingSessionScreen";
+import WeaknessTrainingScreen from "./screens/WeaknessTrainingScreen";
+import { useUiStore } from "./stores/useUiStore";
+
+/** Screen id -> component. Screens are cheap stubs; no lazy loading yet. */
+const SCREEN_COMPONENTS: Record<ScreenId, ComponentType> = {
+  dashboard: DashboardScreen,
+  lessons: LessonsScreen,
+  "typing-session": TypingSessionScreen,
+  "lesson-results": LessonResultsScreen,
+  statistics: StatisticsScreen,
+  "weakness-training": WeaknessTrainingScreen,
+  "custom-lessons": CustomLessonsScreen,
+  settings: SettingsScreen,
+};
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  const activeScreen = useUiStore((state) => state.activeScreen);
+  const ActiveScreen = SCREEN_COMPONENTS[activeScreen];
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+    <Shell>
+      <TopBar />
+      <ActiveScreen />
+    </Shell>
   );
 }
 

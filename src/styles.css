@@ -1,6 +1,312 @@
+/*
+ * TypeKernel design system — Tailwind 4 CSS-first tokens.
+ *
+ * Translated 1:1 from the shared `tailwind.config` block found in every
+ * `screens/*_typekernel/code.html` design mockup (Tailwind 3 CDN JS config).
+ * Class names used in the designs (`bg-surface-container-low`, `p-space-lg`,
+ * `font-code-sm`, `text-code-sm`, `rounded-xl`, ...) compile to identical CSS
+ * values here.
+ *
+ * Fonts are self-hosted (see @font-face below) — the app never touches a CDN.
+ */
+
 @import "tailwindcss";
 
-@theme {
-  --font-mono: "JetBrains Mono", monospace;
-  --color-primary: #3b82f6;
+/* ---------------------------------------------------------------------------
+ * Self-hosted fonts (woff2 in /public/fonts, vendored at build time)
+ * ------------------------------------------------------------------------- */
+
+/* Inter — UI font (body / headline / display / label-md) */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/inter-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/inter-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/inter-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/inter-latin-700-normal.woff2") format("woff2");
+}
+
+/* JetBrains Mono — code font (code-* / label-sm) */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin-700-normal.woff2") format("woff2");
+}
+
+/* Material Symbols Outlined — vendored variable icon font (wght + FILL axes) */
+@font-face {
+  font-family: "Material Symbols Outlined";
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url("/fonts/material-symbols-outlined-variable-normal.woff2")
+    format("woff2");
+}
+
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: "liga";
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 24;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------------------
+ * Design tokens (@theme) — mirrors `tailwind.config` in screens/*_typekernel
+ * ------------------------------------------------------------------------- */
+
+/* `static` keeps every token in the compiled CSS even when a class using it
+ * isn't referenced yet — later phases may emit these class names dynamically. */
+@theme static {
+  /* Colors — Material-3 dark palette, orange primary */
+  --color-background: #0f131c;
+  --color-surface: #0f131c;
+  --color-surface-dim: #0f131c;
+  --color-surface-bright: #353943;
+  --color-surface-container-lowest: #0a0e17;
+  --color-surface-container-low: #181b25;
+  --color-surface-container: #1c1f29;
+  --color-surface-container-high: #262a34;
+  --color-surface-container-highest: #31353f;
+  --color-surface-variant: #31353f;
+  --color-surface-tint: #ffb690;
+  --color-on-surface: #dfe2ef;
+  --color-on-background: #dfe2ef;
+  --color-on-surface-variant: #e0c0b1;
+  --color-inverse-surface: #dfe2ef;
+  --color-inverse-on-surface: #2c303a;
+  --color-inverse-primary: #9d4300;
+
+  --color-primary: #ffb690;
+  --color-primary-container: #f97316;
+  --color-on-primary: #552100;
+  --color-on-primary-container: #582200;
+  --color-primary-fixed: #ffdbca;
+  --color-primary-fixed-dim: #ffb690;
+  --color-on-primary-fixed: #341100;
+  --color-on-primary-fixed-variant: #783200;
+
+  --color-secondary: #ffb783;
+  --color-secondary-container: #d97722;
+  --color-on-secondary: #4f2500;
+  --color-on-secondary-container: #451f00;
+  --color-secondary-fixed: #ffdcc5;
+  --color-secondary-fixed-dim: #ffb783;
+  --color-on-secondary-fixed: #301400;
+  --color-on-secondary-fixed-variant: #713700;
+
+  --color-tertiary: #ffb599;
+  --color-tertiary-container: #ff6d2c;
+  --color-on-tertiary: #5a1c00;
+  --color-on-tertiary-container: #5d1d00;
+  --color-tertiary-fixed: #ffdbce;
+  --color-tertiary-fixed-dim: #ffb599;
+  --color-on-tertiary-fixed: #370e00;
+  --color-on-tertiary-fixed-variant: #7f2b00;
+
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+  --color-on-error: #690005;
+  --color-on-error-container: #ffdad6;
+
+  --color-outline: #a78b7d;
+  --color-outline-variant: #584237;
+
+  /* Border radii — note: `rounded` (bare) = 0.125rem and `rounded-full` =
+   * 0.75rem (NOT a pill), exactly like the design config. */
+  --radius: 0.125rem;
+  --radius-lg: 0.25rem;
+  --radius-xl: 0.5rem;
+  --radius-full: 0.75rem;
+
+  /* Named spacing scale (used as p-space-lg, gap-space-sm, w-sidebar-width...) */
+  --spacing-space-2xs: 0.125rem;
+  --spacing-space-xs: 0.25rem;
+  --spacing-space-sm: 0.5rem;
+  --spacing-space-md: 0.75rem;
+  --spacing-space-base: 1rem;
+  --spacing-space-lg: 1.5rem;
+  --spacing-space-xl: 2rem;
+  --spacing-space-2xl: 3rem;
+  --spacing-gutter-mobile: 0.75rem;
+  --spacing-gutter-desktop: 1.25rem;
+  --spacing-sidebar-width: 16rem;
+  --spacing-terminal-drawer-collapsed: 2.5rem;
+
+  /* Font families — same key names as the design config so `font-code-sm`
+   * (family) and `text-code-sm` (size scale) both resolve. */
+  --font-body-md: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body-sm: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body-lg: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline-md: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline-lg: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline-xl: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline-xl-mobile: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display-lg: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-label-md: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-code-sm: "JetBrains Mono", ui-monospace, monospace;
+  --font-code-md: "JetBrains Mono", ui-monospace, monospace;
+  --font-code-lg: "JetBrains Mono", ui-monospace, monospace;
+  --font-label-sm: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Type scale — size / line-height / letter-spacing / weight exactly as the
+   * design config's `fontSize` entries. */
+  --text-display-lg: 40px;
+  --text-display-lg--line-height: 48px;
+  --text-display-lg--letter-spacing: -0.025em;
+  --text-display-lg--font-weight: 700;
+
+  --text-headline-xl: 32px;
+  --text-headline-xl--line-height: 40px;
+  --text-headline-xl--letter-spacing: -0.02em;
+  --text-headline-xl--font-weight: 700;
+
+  --text-headline-xl-mobile: 26px;
+  --text-headline-xl-mobile--line-height: 34px;
+  --text-headline-xl-mobile--letter-spacing: -0.015em;
+  --text-headline-xl-mobile--font-weight: 700;
+
+  --text-headline-lg: 24px;
+  --text-headline-lg--line-height: 32px;
+  --text-headline-lg--letter-spacing: -0.015em;
+  --text-headline-lg--font-weight: 600;
+
+  --text-headline-md: 18px;
+  --text-headline-md--line-height: 26px;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 600;
+
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+  --text-body-lg--letter-spacing: 0em;
+  --text-body-lg--font-weight: 400;
+
+  --text-body-md: 14px;
+  --text-body-md--line-height: 22px;
+  --text-body-md--letter-spacing: 0em;
+  --text-body-md--font-weight: 400;
+
+  --text-body-sm: 12px;
+  --text-body-sm--line-height: 18px;
+  --text-body-sm--letter-spacing: 0.01em;
+  --text-body-sm--font-weight: 400;
+
+  --text-code-lg: 14px;
+  --text-code-lg--line-height: 22px;
+  --text-code-lg--letter-spacing: 0em;
+  --text-code-lg--font-weight: 500;
+
+  --text-code-md: 13px;
+  --text-code-md--line-height: 20px;
+  --text-code-md--letter-spacing: 0em;
+  --text-code-md--font-weight: 400;
+
+  --text-code-sm: 11px;
+  --text-code-sm--line-height: 16px;
+  --text-code-sm--letter-spacing: 0.02em;
+  --text-code-sm--font-weight: 500;
+
+  --text-label-md: 13px;
+  --text-label-md--line-height: 18px;
+  --text-label-md--letter-spacing: 0.01em;
+  --text-label-md--font-weight: 500;
+
+  --text-label-sm: 11px;
+  --text-label-sm--line-height: 14px;
+  --text-label-sm--letter-spacing: 0.06em;
+  --text-label-sm--font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+ * Base layer — matches the shared <style> block in the design mockups
+ * ------------------------------------------------------------------------- */
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html {
+    background-color: #0f131c;
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    overscroll-behavior: none;
+  }
+
+  /* Thin terminal-style scrollbar, per the designs */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #31353f;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #584237;
+  }
 }
