@@ -85,6 +85,23 @@ export const AttemptRowSchema = AttemptSchema.extend({
 });
 export type AttemptRow = z.infer<typeof AttemptRowSchema>;
 
+/** One spotlighted character of a finished attempt (`key_report` json). */
+export const KeyReportEntrySchema = z.object({
+  /** Expected character (the char the user had to type). */
+  key: z.string().min(1),
+  shiftRequired: z.boolean(),
+  totalPresses: z.number().int().min(0),
+  incorrectPresses: z.number().int().min(0),
+  avgLatencyMs: z.number().min(0),
+});
+export type KeyReportEntry = z.infer<typeof KeyReportEntrySchema>;
+
+/** Full attempt row as read back incl. the per-attempt key spotlight. */
+export const AttemptReportRowSchema = AttemptRowSchema.extend({
+  keyReport: z.array(KeyReportEntrySchema).nullable(),
+});
+export type AttemptReportRow = z.infer<typeof AttemptReportRowSchema>;
+
 /* ---------------------------------------------------------------------------
  * Key statistics (PRD §14 / §21.1 — one row per *character* with its
  * shift requirement, so `a`/`A` and `(`/`9` stay distinct)

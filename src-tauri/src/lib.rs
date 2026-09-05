@@ -12,12 +12,22 @@ pub fn run() {
                     // (`pnpm db:generate`) from `src/lib/db/schema.ts`.
                     // Applied once per DB version by tauri-plugin-sql at
                     // startup — idempotent by construction.
-                    vec![Migration {
-                        version: 1,
-                        description: "create_initial_schema".into(),
-                        sql: include_str!("../migrations/0000_previous_pestilence.sql").into(),
-                        kind: MigrationKind::Up,
-                    }],
+                    vec![
+                        Migration {
+                            version: 1,
+                            description: "create_initial_schema".into(),
+                            sql: include_str!("../migrations/0000_previous_pestilence.sql").into(),
+                            kind: MigrationKind::Up,
+                        },
+                        // Phase 4: per-attempt key spotlight column on
+                        // `lesson_attempts` (Results screen key cards).
+                        Migration {
+                            version: 2,
+                            description: "attempt_key_report".into(),
+                            sql: include_str!("../migrations/0001_gorgeous_ben_grimm.sql").into(),
+                            kind: MigrationKind::Up,
+                        },
+                    ],
                 )
                 .build(),
         )

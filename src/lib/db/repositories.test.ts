@@ -1,23 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
-import { drizzle } from "drizzle-orm/sqlite-proxy";
+import type { DatabaseSync } from "node:sqlite";
 
 import { setDbForTests } from "./client";
-import * as schema from "./schema";
+import { connectTestDb } from "./testing";
+import { getLesson } from "../../content";
 import {
   attemptsRepo,
   keyStatsRepo,
   lessonsRepo,
   sessionsRepo,
 } from "./repositories";
-import { FIXTURE_LESSONS } from "../../content/fixtures";
-
-// The real migration SQL that the Rust binary applies at startup.
-const migrationSql = readFileSync(
-  new URL("../../../src-tauri/migrations/0000_previous_pestilence.sql", import.meta.url),
-  "utf8",
-);
 
 /**
  * Repository integration tests — run the REAL generated migration SQL and the
@@ -28,30 +20,12 @@ const migrationSql = readFileSync(
  * without needing the GUI.
  */
 
+const lesson = getLesson("l1-001")!;
+
 let sqlite: DatabaseSync;
 
 beforeAll(() => {
-  sqlite = new DatabaseSync(":memory:");
-  sqlite.exec("PRAGMA foreign_keys = ON;");
-  sqlite.exec(migrationSql);
-
-  const proxy = drizzle(async (sql, params, method) => {
-    // tauri-plugin-sql serialises params through JSON -> sqlx, which stores
-    // JS booleans as SQLite integers; mirror that here for node:sqlite.
-    const bound = params.map((p) => (typeof p === "boolean" ? (p ? 1 : 0) : p));
-    if (method === "run") {
-      sqlite.prepare(sql).run(...bound);
-      return { rows: [] };
-    }
-    const rows = sqlite.prepare(sql).all(...bound) as Record<string, unknown>[];
-    // Mirror client.ts: drizzle's proxy mapper indexes rows positionally.
-    if (method === "get") {
-      return { rows: (rows[0] ? Object.values(rows[0]) : null) as never };
-    }
-    return { rows: rows.map((row) => Object.values(row)) as never };
-  }, { schema });
-
-  setDbForTests(proxy);
+  sqlite = connectTestDb();
 });
 
 afterAll(() => {
@@ -88,12 +62,46 @@ describe("migration SQL", () => {
 });
 
 describe("attemptsRepo", () => {
-  it("syncs the fixture lesson, appends attempts and counts them", async () => {
-    await lessonsRepo.upsert(FIXTURE_LESSONS[0]);
+  it("inserts with transactional MAX+1 numbering, key report and history", async () => {
+    await lessonsRepo.upsert(getLesson("l1-002")!);
+
+    const base = {
+      wpm: 48,
+      accuracy: 96,
+      errorRate: 4,
+      errorCount: 4,
+      correctChars: 120,
+      incorrectChars: 5,
+      backspaceCount: 3,
+      durationMs: 50_000,
+      completed: true,
+      startedAt: 1_000,
+      finishedAt: 51_000,
+    };
+    const first = await attemptsRepo.insertWithNextNumber(
+      { lessonId: "l1-002", ...base },
+      [{ key: "(", shiftRequired: true, totalPresses: 8, incorrectPresses: 3, avgLatencyMs: 180 }],
+    );
+    const second = await attemptsRepo.insertWithNextNumber({
+      lessonId: "l1-002",
+      ...base,
+    });
+    expect(first.attemptNumber).toBe(1);
+    expect(second.attemptNumber).toBe(2);
+
+    const fetched = await attemptsRepo.getById(first.id);
+    expect(fetched?.lessonId).toBe("l1-002");
+
+    const history = await attemptsRepo.historyFor("l1-002", 5);
+    expect(history.map((h) => h.attemptNumber)).toEqual([2, 1]);
+  });
+
+  it("syncs a curriculum lesson, appends attempts and counts them", async () => {
+    await lessonsRepo.upsert(lesson);
 
     const row = await attemptsRepo.insert({
-      lessonId: FIXTURE_LESSONS[0].id,
-      attemptNumber: await attemptsRepo.nextAttemptNumber(FIXTURE_LESSONS[0].id),
+      lessonId: lesson.id,
+      attemptNumber: await attemptsRepo.nextAttemptNumber(lesson.id),
       wpm: 50.5,
       accuracy: 96.4,
       errorRate: 3.6,
@@ -107,12 +115,12 @@ describe("attemptsRepo", () => {
       finishedAt: 61_000,
     });
 
-    expect(row.id).toBe(1);
+    expect(row.id).toBeGreaterThan(0);
     expect(row.completed).toBe(true); // boolean survived integer storage + read mapping
-    expect(await attemptsRepo.nextAttemptNumber(FIXTURE_LESSONS[0].id)).toBe(2);
+    expect(await attemptsRepo.nextAttemptNumber(lesson.id)).toBe(2);
 
     const second = await attemptsRepo.insert({
-      lessonId: FIXTURE_LESSONS[0].id,
+      lessonId: lesson.id,
       attemptNumber: 2,
       wpm: 55,
       accuracy: 98,
@@ -126,13 +134,13 @@ describe("attemptsRepo", () => {
       startedAt: 2_000,
       finishedAt: 57_000,
     });
-    expect(second.id).toBe(2);
+    expect(second.id).toBe(row.id + 1);
   });
 
   it("rejects invalid attempts before touching SQL", async () => {
     await expect(
       attemptsRepo.insert({
-        lessonId: FIXTURE_LESSONS[0].id,
+        lessonId: lesson.id,
         attemptNumber: 3,
         wpm: -5, // invalid
         accuracy: 98,
@@ -147,7 +155,7 @@ describe("attemptsRepo", () => {
         finishedAt: 57_000,
       }),
     ).rejects.toThrow();
-    expect(await attemptsRepo.nextAttemptNumber(FIXTURE_LESSONS[0].id)).toBe(3);
+    expect(await attemptsRepo.nextAttemptNumber(lesson.id)).toBe(3);
   });
 });
 
@@ -198,7 +206,7 @@ describe("sessionsRepo", () => {
     await sessionsRepo.open({
       id: "sess-1",
       kind: "lesson",
-      lessonId: FIXTURE_LESSONS[0].id,
+      lessonId: lesson.id,
       startedAt: 5_000,
       endedAt: null,
       durationMs: null,
@@ -212,7 +220,7 @@ describe("sessionsRepo", () => {
     expect(rows[0]).toMatchObject({
       id: "sess-1",
       kind: "lesson",
-      lesson_id: FIXTURE_LESSONS[0].id,
+      lesson_id: lesson.id,
       started_at: 5_000,
       ended_at: 65_000,
       duration_ms: 60_000,

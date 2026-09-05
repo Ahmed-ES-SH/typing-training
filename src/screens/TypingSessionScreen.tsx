@@ -1,79 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { getLesson, lessonsByLevel, getLevelMeta } from "../content";
 import { KeyboardVisualization } from "../components/KeyboardVisualization";
-import { DEFAULT_FIXTURE_LESSON, FIXTURE_LESSONS } from "../content/fixtures";
 import { findTargetKey, FINGERS, getActiveLayout } from "../lib/layout";
 import { liveMetrics } from "../lib/engine/metrics";
 import type { SessionState } from "../lib/engine/types";
 import type { Lesson } from "../lib/schemas";
+import { cn } from "../lib/cn";
+import { lessonStatus, useCurriculumStore } from "../stores/useCurriculumStore";
 import { useSessionStore } from "../stores/useSessionStore";
+import { useUiStore } from "../stores/useUiStore";
 
 /**
  * Typing Session screen — implemented from `screens/current_lesson_typekernel`
  * (design `code.html`): module sidebar, full-focus code buffer with per-char
  * evaluation, live telemetry strip and on-screen keyboard.
  *
- * Sidebar module states (✓ completed / RUNNING / next / 🔒 locked) are
- * FIXTURES until Phase 4 wires the real curriculum + unlock rule.
+ * Sidebar module states (✓ completed / RUNNING / next / 🔒 locked) come from
+ * the real curriculum + `lesson_progress` rows (Phase 4). The lesson is
+ * selected through navigation params; finishing routes to the Results screen.
  */
 
 /* ---------------------------------------------------------------------------
- * Fixture sidebar data (Phase 4 replaces this with real lesson states)
+ * Sidebar
  * ------------------------------------------------------------------------- */
 
 type ModuleState = "completed" | "running" | "next" | "locked";
 
-interface FixtureModule {
-  num: string;
-  title: string;
-  tokens: string;
-  state: ModuleState;
-  wpm?: number;
-  accuracy?: number;
-  pr?: number;
-  note?: string;
-  lesson?: Lesson;
+function moduleStateOf(
+  lesson: Lesson,
+  activeLessonId: string | null,
+  progress: Record<string, import("../lib/schemas").LessonProgress>,
+): ModuleState {
+  if (lesson.id === activeLessonId) return "running";
+  switch (lessonStatus(progress, lesson.id)) {
+    case "completed":
+      return "completed";
+    case "available":
+      return "next";
+    default:
+      return "locked";
+  }
 }
-
-const FIXTURE_MODULES: FixtureModule[] = [
-  {
-    num: "3.12",
-    title: "Bitwise Operators",
-    tokens: "Tokens: &, |, ^, ~",
-    state: "completed",
-    wpm: 61,
-    accuracy: 96,
-    lesson: FIXTURE_LESSONS[2],
-  },
-  {
-    num: "3.13",
-    title: "Pointers & Addresses",
-    tokens: "Tokens: *, &, &&",
-    state: "completed",
-    wpm: 58,
-    accuracy: 97,
-  },
-  {
-    num: "3.14",
-    title: "Struct Arrow & Member",
-    tokens: "Tokens: ->, ., (*p).",
-    state: "running",
-    pr: 42,
-    note: "18.4ms",
-    lesson: DEFAULT_FIXTURE_LESSON,
-  },
-  {
-    num: "3.15",
-    title: "Nested JSON & Map Braces",
-    tokens: "Tokens: {}, [], [:]",
-    state: "next",
-    lesson: FIXTURE_LESSONS[1],
-  },
-  { num: "3.16", title: "Regex & Escapes", tokens: "Tokens: \\d, \\s, [^a-z]", state: "locked" },
-  { num: "3.17", title: "Generics & Lifetimes", tokens: "Tokens: <'a, T>, PhantomData", state: "locked" },
-  { num: "3.18", title: "Double Colons & Paths", tokens: "Tokens: std::sync::Arc, ::new", state: "locked" },
-  { num: "3.19", title: "Lambda & Capture Syntax", tokens: "Tokens: [=], [&], -> auto", state: "locked" },
-];
 
 /* ---------------------------------------------------------------------------
  * Small helpers
@@ -90,11 +58,16 @@ const fmtClock = (ms: number): string => {
  * Sidebar
  * ------------------------------------------------------------------------- */
 
-function ModuleCard({ module, onSelect }: {
-  module: FixtureModule;
-  onSelect: (module: FixtureModule) => void;
+function ModuleCard({ lesson, state, progress, onSelect }: {
+  lesson: Lesson;
+  state: ModuleState;
+  progress?: import("../lib/schemas").LessonProgress;
+  onSelect: (lesson: Lesson) => void;
 }) {
-  if (module.state === "running") {
+  const num = `${lesson.level}.${String(lesson.orderIndex + 1).padStart(2, "0")}`;
+  const tokens = `Tokens: ${lesson.targetKeys.slice(0, 4).join(" ")}`;
+
+  if (state === "running") {
     return (
       <div className="relative overflow-hidden rounded-lg border border-primary-container/40 bg-surface-container-high p-space-sm shadow-lg ring-1 ring-primary-container/30">
         <div className="absolute bottom-0 left-0 top-0 w-1.5 bg-primary-container shadow-[0_0_12px_rgba(249,115,22,0.9)]" />
@@ -105,7 +78,7 @@ function ModuleCard({ module, onSelect }: {
               <span className="relative inline-flex h-2 w-2 rounded-full bg-primary-container" />
             </span>
             <span className="font-code-sm text-code-sm font-bold text-primary">
-              {module.num} {module.title}
+              {num} {lesson.title}
             </span>
           </div>
           <span className="rounded bg-primary-container px-1.5 py-0.5 font-label-sm text-label-sm font-bold uppercase tracking-wider text-on-primary-container">
@@ -113,27 +86,20 @@ function ModuleCard({ module, onSelect }: {
           </span>
         </div>
         <div className="flex items-center justify-between pl-3.5 font-code-sm text-code-sm text-on-surface-variant">
-          <span className="text-primary-fixed">{module.tokens}</span>
-          <span className="font-semibold text-on-surface">PR: {module.pr} WPM</span>
+          <span className="text-primary-fixed">{tokens}</span>
+          {progress && progress.bestWpm > 0 && (
+            <span className="font-semibold text-on-surface">PR: {progress.bestWpm.toFixed(1)} WPM</span>
+          )}
         </div>
-        {module.note && (
-          <div className="mt-2 flex items-center justify-between rounded bg-surface-container-lowest/80 px-2 py-1 pl-2 text-[11px] font-code-sm text-primary">
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[13px]">tune</span>
-              <span>Dual-finger glide target</span>
-            </span>
-            <span className="font-mono text-on-surface-variant">{module.note}</span>
-          </div>
-        )}
       </div>
     );
   }
 
-  if (module.state === "completed") {
+  if (state === "completed") {
     return (
       <button
         type="button"
-        onClick={() => onSelect(module)}
+        onClick={() => onSelect(lesson)}
         className="group w-full rounded-lg border border-transparent bg-surface-container-lowest/70 p-space-sm text-left shadow-sm transition-all hover:border-surface-container-highest/60 hover:bg-surface-container"
       >
         <div className="mb-1 flex items-center justify-between">
@@ -145,26 +111,26 @@ function ModuleCard({ module, onSelect }: {
               check_circle
             </span>
             <span className="font-code-sm text-code-sm font-semibold text-on-surface">
-              {module.num} {module.title}
+              {num} {lesson.title}
             </span>
           </div>
           <span className="rounded bg-surface-container-high px-1.5 py-0.5 font-code-sm text-code-sm text-primary">
-            {module.wpm} WPM
+            {progress ? progress.bestWpm.toFixed(0) : 0} WPM
           </span>
         </div>
         <div className="flex items-center justify-between pl-6 font-code-sm text-code-sm text-on-surface-variant">
-          <span className="text-outline">{module.tokens}</span>
-          <span>{module.accuracy}% Acc</span>
+          <span className="text-outline">{tokens}</span>
+          <span>{progress ? progress.bestAccuracy.toFixed(0) : 0}% Acc</span>
         </div>
       </button>
     );
   }
 
-  if (module.state === "next") {
+  if (state === "next") {
     return (
       <button
         type="button"
-        onClick={() => onSelect(module)}
+        onClick={() => onSelect(lesson)}
         className="w-full rounded-lg bg-surface-container-lowest/50 p-space-sm text-left shadow-sm opacity-90 transition-all hover:bg-surface-container"
       >
         <div className="mb-1 flex items-center justify-between">
@@ -173,7 +139,7 @@ function ModuleCard({ module, onSelect }: {
               lock_open
             </span>
             <span className="font-code-sm text-code-sm font-medium text-on-surface">
-              {module.num} {module.title}
+              {num} {lesson.title}
             </span>
           </div>
           <span className="rounded bg-surface-container-lowest px-1.5 py-0.5 font-code-sm text-code-sm text-on-surface-variant">
@@ -181,7 +147,7 @@ function ModuleCard({ module, onSelect }: {
           </span>
         </div>
         <div className="flex items-center justify-between pl-6 font-code-sm text-code-sm text-on-surface-variant">
-          <span className="text-outline">{module.tokens}</span>
+          <span className="text-outline">{tokens}</span>
           <span>Pending</span>
         </div>
       </button>
@@ -195,81 +161,120 @@ function ModuleCard({ module, onSelect }: {
         <div className="flex items-center gap-space-xs">
           <span className="material-symbols-outlined text-[16px] text-outline">lock</span>
           <span className="font-code-sm text-code-sm text-on-surface-variant">
-            {module.num} {module.title}
+            {num} {lesson.title}
           </span>
         </div>
         <span className="font-label-sm text-label-sm text-outline">LOCKED</span>
       </div>
-      <div className="pl-6 font-code-sm text-code-sm text-outline">{module.tokens}</div>
+      <div className="pl-6 font-code-sm text-code-sm text-outline">{tokens}</div>
     </div>
   );
 }
 
 function ModuleSidebar({
+  lesson,
   activeLessonId,
+  progress,
   onSelect,
 }: {
+  lesson: Lesson | null;
   activeLessonId: string | null;
-  onSelect: (module: FixtureModule) => void;
+  progress: Record<string, import("../lib/schemas").LessonProgress>;
+  onSelect: (lesson: Lesson) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const completed = FIXTURE_MODULES.filter((m) => m.state === "completed").length;
+  const [tab, setTab] = useState<"all" | "remaining">("all");
+  const level = lesson?.level ?? 1;
+  const meta = getLevelMeta(level);
+  const levelLessons = useMemo(() => lessonsByLevel(level), [level]);
+  const completed = levelLessons.filter(
+    (l) => lessonStatus(progress, l.id) === "completed",
+  ).length;
+  const visibleLessons = levelLessons.filter((l) => {
+    if (tab === "all") return true;
+    return lessonStatus(progress, l.id) !== "completed" || l.id === activeLessonId;
+  });
 
   return (
     <aside
-      className={`flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-surface-container-highest/30 bg-surface-container-low shadow-2xl transition-all duration-300 lg:w-88 xl:w-96 ${
-        collapsed ? "hidden" : ""
-      }`}
+      className={cn(
+        "flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-surface-container-highest/30 bg-surface-container-low shadow-2xl transition-all duration-300 lg:w-88 xl:w-96",
+        collapsed ? "hidden" : "",
+      )}
     >
       {/* Track header */}
       <div className="relative overflow-hidden border-b border-surface-container-highest/40 bg-gradient-to-b from-surface-container-high/40 to-transparent p-space-base">
         <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-primary-container/15 blur-2xl" />
         <div className="mb-1.5 flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant">
-          <span className="font-bold tracking-wider text-primary">TRACK 03 // LEVEL 03</span>
+          <span className="font-bold tracking-wider text-primary">
+            TRACK {String(level).padStart(2, "0")} // LEVEL {String(level).padStart(2, "0")}
+          </span>
           <span className="rounded bg-surface-container px-space-xs py-0.5 font-code-sm font-bold text-primary">
-            {completed}/{FIXTURE_MODULES.length}
+            {completed}/{levelLessons.length}
           </span>
         </div>
         <h2 className="mb-2 font-headline-md text-headline-md leading-snug tracking-tight text-on-surface">
-          Programming Symbols &amp; Pointers
+          {meta?.name ?? "Curriculum"}
         </h2>
         <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-container-lowest">
-          <div className="h-full w-[28%] bg-gradient-to-r from-secondary-container via-primary-container to-primary" />
+          <div
+            className="h-full bg-gradient-to-r from-secondary-container via-primary-container to-primary"
+            style={{
+              width: `${levelLessons.length ? Math.round((completed / levelLessons.length) * 100) : 0}%`,
+            }}
+          />
         </div>
         <div className="flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant">
-          <span>28% Completed</span>
+          <span>
+            {levelLessons.length ? Math.round((completed / levelLessons.length) * 100) : 0}% Completed
+          </span>
           <span className="font-medium text-primary-container">
-            {FIXTURE_MODULES.length - completed} Modules Remaining
+            {levelLessons.length - completed} Modules Remaining
           </span>
         </div>
       </div>
 
-      {/* Filter tabs (fixture — real filters arrive with Phase 4) */}
+      {/* Filter tabs */}
       <div className="flex flex-col gap-1.5 border-b border-surface-container-highest/30 bg-surface-container-lowest/40 p-space-xs">
         <div className="flex items-center gap-1 rounded-lg bg-surface-container-lowest p-1 font-label-sm text-label-sm text-on-surface-variant">
-          <button type="button" className="flex-1 rounded bg-surface-container-high px-2 py-1 text-center font-bold text-primary shadow-sm transition-colors">
-            All ({FIXTURE_MODULES.length})
+          <button
+            type="button"
+            onClick={() => setTab("all")}
+            className={cn(
+              "flex-1 rounded px-2 py-1 text-center transition-colors",
+              tab === "all"
+                ? "bg-surface-container-high font-bold text-primary shadow-sm"
+                : "hover:bg-surface-container",
+            )}
+          >
+            All ({levelLessons.length})
           </button>
-          <button type="button" className="flex-1 rounded px-2 py-1 text-center transition-colors hover:bg-surface-container">
-            Ch 3.2
-          </button>
-          <button type="button" className="flex-1 rounded px-2 py-1 text-center transition-colors hover:bg-surface-container">
-            Incomplete
+          <button
+            type="button"
+            onClick={() => setTab("remaining")}
+            className={cn(
+              "flex-1 rounded px-2 py-1 text-center transition-colors",
+              tab === "remaining"
+                ? "bg-surface-container-high font-bold text-primary shadow-sm"
+                : "hover:bg-surface-container",
+            )}
+          >
+            Remaining ({levelLessons.length - completed})
           </button>
         </div>
       </div>
 
       {/* Module list */}
       <div className="flex flex-1 flex-col gap-space-xs overflow-y-auto p-space-sm">
-        {FIXTURE_MODULES.map((module) => (
+        {visibleLessons.map((l) => (
           <ModuleCard
-            key={module.num}
-            module={module}
-            onSelect={
-              module.lesson !== undefined && module.lesson.id !== activeLessonId
-                ? onSelect
-                : () => {}
-            }
+            key={l.id}
+            lesson={l}
+            state={moduleStateOf(l, activeLessonId, progress)}
+            progress={progress[l.id]}
+            onSelect={(selected) => {
+              if (selected.id !== activeLessonId) onSelect(selected);
+            }}
           />
         ))}
       </div>
@@ -291,6 +296,7 @@ function ModuleSidebar({
         </button>
         <button
           type="button"
+          onClick={() => useUiStore.getState().navigate("lessons")}
           className="flex w-full items-center justify-center gap-1.5 rounded py-1.5 font-label-md text-label-md text-primary transition-colors hover:text-primary-fixed"
         >
           <span className="material-symbols-outlined text-[16px]">map</span>
@@ -311,7 +317,8 @@ interface DisplayLine {
   offset: number;
 }
 
-function CodeBuffer({ engineState, running }: {
+function CodeBuffer({ lesson, engineState, running }: {
+  lesson: Lesson | null;
   engineState: SessionState;
   running: boolean;
 }) {
@@ -346,16 +353,17 @@ function CodeBuffer({ engineState, running }: {
         <div className="flex items-center gap-space-sm">
           <div className="flex items-center gap-2 rounded-t-md border-t-2 border-primary-container bg-surface-container-lowest px-space-sm py-1 font-code-sm text-code-sm font-semibold text-primary">
             <span className="material-symbols-outlined text-[15px] text-primary-container">data_object</span>
-            <span>fixture_module.cpp</span>
+            <span>{lesson ? `${lesson.id}.txt` : "module.txt"}</span>
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary-container" />
           </div>
           <div className="hidden items-center gap-1 px-2 font-code-sm text-code-sm text-on-surface-variant sm:flex">
-            <span>src/content/fixtures.ts</span>
+            <span>{lesson ? lesson.title : "no module selected"}</span>
           </div>
         </div>
         <div className="flex items-center gap-space-md font-code-sm text-code-sm text-on-surface-variant">
           <span className="hidden rounded bg-surface-container px-2 py-0.5 text-primary-fixed md:inline">
-            LEVEL 03 // SYMBOLS
+            LEVEL {String(lesson?.level ?? 0).padStart(2, "0")} //{" "}
+            {getLevelMeta(lesson?.level ?? 1)?.tagline ?? "IDLE"}
           </span>
           <span className="hidden sm:inline">UTF-8</span>
           <div className="flex items-center gap-1 text-on-surface">
@@ -458,11 +466,22 @@ export default function TypingSessionScreen() {
   const typeChar = useSessionStore((s) => s.typeChar);
   const backspace = useSessionStore((s) => s.backspace);
   const retryPersist = useSessionStore((s) => s.retryPersist);
+  const sessionParams = useUiStore((s) => s.params["typing-session"]);
+  const progress = useCurriculumStore((s) => s.progress);
 
-  // Auto-start the fixture lesson (Phase 4 replaces this with navigation).
+  // Start the param-selected lesson exactly once per navigation (§3.8):
+  // the store resets to idle when a lesson is chosen elsewhere.
+  const startedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (phase === "idle") void startLesson(DEFAULT_FIXTURE_LESSON);
-  }, [phase, startLesson]);
+    const lessonId = sessionParams?.lessonId ?? null;
+    if (phase === "idle" && lessonId !== null && startedFor.current !== lessonId) {
+      const selected = getLesson(lessonId);
+      if (selected) {
+        startedFor.current = lessonId;
+        void startLesson(selected);
+      }
+    }
+  }, [phase, sessionParams, startLesson]);
 
   // Global keydown listener — active only while a session is running.
   useEffect(() => {
@@ -506,8 +525,10 @@ export default function TypingSessionScreen() {
   return (
     <main className="flex min-h-0 w-full flex-1 gap-space-sm overflow-hidden bg-surface p-space-sm sm:p-space-base">
       <ModuleSidebar
+        lesson={lesson}
         activeLessonId={lesson?.id ?? null}
-        onSelect={(module) => module.lesson && void startLesson(module.lesson)}
+        progress={progress}
+        onSelect={(selected) => void startLesson(selected)}
       />
 
       <section className="relative flex h-full min-w-0 flex-1 flex-col gap-space-sm overflow-hidden">
@@ -634,7 +655,20 @@ export default function TypingSessionScreen() {
         </div>
 
         {/* Code buffer */}
-        {engineState !== null && <CodeBuffer engineState={engineState} running={running} />}
+        {engineState !== null ? (
+          <CodeBuffer lesson={lesson} engineState={engineState} running={running} />
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-surface-container-highest/40 bg-surface-container-lowest shadow-2xl">
+            <span className="material-symbols-outlined text-[36px] text-outline">keyboard</span>
+            <p className="mt-2 font-headline-md text-headline-md text-on-surface">
+              No module loaded
+            </p>
+            <p className="mt-1 max-w-sm text-center font-body-sm text-body-sm text-on-surface-variant">
+              Pick an available module from the sidebar (or the Lessons
+              screen) to start a typing session.
+            </p>
+          </div>
+        )}
 
         {/* Keyboard visualization + status strip */}
         <div className="flex shrink-0 select-none flex-col gap-2 rounded-xl border border-surface-container-highest/40 bg-surface-container-low/95 p-3 shadow-inner">

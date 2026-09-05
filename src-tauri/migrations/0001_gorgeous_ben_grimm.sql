@@ -1,0 +1,1 @@
+ALTER TABLE `lesson_attempts` ADD `key_report` text;

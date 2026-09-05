@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import { getDb } from "./client";
 import {
@@ -9,14 +9,18 @@ import {
   trainingSessions,
 } from "./schema";
 import {
+  AttemptReportRowSchema,
   AttemptRowSchema,
   AttemptSchema,
+  KeyReportEntrySchema,
   KeyStatEventSchema,
   KeyStatRowSchema,
   LessonProgressSchema,
   LessonSchema,
   type Attempt,
+  type AttemptReportRow,
   type AttemptRow,
+  type KeyReportEntry,
   type KeyStatEvent,
   type KeyStatRow,
   type Lesson,
@@ -66,6 +70,24 @@ export const lessonsRepo = {
  * lesson_attempts (§10 — append-only; no UPDATE of metric columns, ever)
  * ------------------------------------------------------------------------- */
 
+/** The §10 metric columns every read path returns (never the key report). */
+const ATTEMPT_ROW_COLUMNS = {
+  id: lessonAttempts.id,
+  lessonId: lessonAttempts.lessonId,
+  attemptNumber: lessonAttempts.attemptNumber,
+  wpm: lessonAttempts.wpm,
+  accuracy: lessonAttempts.accuracy,
+  errorRate: lessonAttempts.errorRate,
+  errorCount: lessonAttempts.errorCount,
+  correctChars: lessonAttempts.correctChars,
+  incorrectChars: lessonAttempts.incorrectChars,
+  backspaceCount: lessonAttempts.backspaceCount,
+  durationMs: lessonAttempts.durationMs,
+  completed: lessonAttempts.completed,
+  startedAt: lessonAttempts.startedAt,
+  finishedAt: lessonAttempts.finishedAt,
+} as const;
+
 export const attemptsRepo = {
   /** Next attempt number for a lesson (1-based). */
   async nextAttemptNumber(lessonId: string): Promise<number> {
@@ -77,30 +99,80 @@ export const attemptsRepo = {
     return Number(rows[0]?.count ?? 0) + 1;
   },
 
-  /** Appends one attempt row. Throws on invalid data, before SQL runs. */
-  async insert(attempt: Attempt): Promise<AttemptRow> {
+  /** Appends one attempt row (with optional key report). Throws on invalid
+   * data, before SQL runs. */
+  async insert(attempt: Attempt, keyReport: KeyReportEntry[] = []): Promise<AttemptRow> {
     const valid = AttemptSchema.parse(attempt);
+    const report = keyReport.map((entry) => KeyReportEntrySchema.parse(entry));
     const db = await getDb();
     const rows = await db
       .insert(lessonAttempts)
-      .values(valid)
-      .returning({
-        id: lessonAttempts.id,
-        lessonId: lessonAttempts.lessonId,
-        attemptNumber: lessonAttempts.attemptNumber,
-        wpm: lessonAttempts.wpm,
-        accuracy: lessonAttempts.accuracy,
-        errorRate: lessonAttempts.errorRate,
-        errorCount: lessonAttempts.errorCount,
-        correctChars: lessonAttempts.correctChars,
-        incorrectChars: lessonAttempts.incorrectChars,
-        backspaceCount: lessonAttempts.backspaceCount,
-        durationMs: lessonAttempts.durationMs,
-        completed: lessonAttempts.completed,
-        startedAt: lessonAttempts.startedAt,
-        finishedAt: lessonAttempts.finishedAt,
-      });
+      .values({ ...valid, keyReport: report })
+      .returning(ATTEMPT_ROW_COLUMNS);
     return AttemptRowSchema.parse(rows[0]);
+  },
+
+  /**
+   * Appends one attempt with `attempt_number = MAX(attempt_number) + 1` for
+   * the lesson (§10), computed INSIDE the single INSERT statement — the
+   * scalar subquery makes the read-modify-write atomic without an explicit
+   * transaction across the plugin connection pool.
+   */
+  async insertWithNextNumber(
+    attempt: Omit<Attempt, "attemptNumber">,
+    keyReport: KeyReportEntry[] = [],
+  ): Promise<AttemptRow> {
+    const { attemptNumber: _ignored, ...rest } = AttemptSchema.parse({
+      ...attempt,
+      attemptNumber: 1, // replaced by the MAX+1 subquery below
+    });
+    void _ignored;
+    const report = keyReport.map((entry) => KeyReportEntrySchema.parse(entry));
+    const db = await getDb();
+    const rows = await db
+      .insert(lessonAttempts)
+      .values({
+        ...rest,
+        attemptNumber: sql`(select coalesce(max(${lessonAttempts.attemptNumber}), 0) + 1 from lesson_attempts where lesson_id = ${attempt.lessonId})`,
+        keyReport: report,
+      })
+      .returning(ATTEMPT_ROW_COLUMNS);
+    return AttemptRowSchema.parse(rows[0]);
+  },
+
+  /** Reads one attempt by row id (Results screen deep-link), with the
+   * per-attempt key report. */
+  async getById(id: number): Promise<AttemptReportRow | null> {
+    const db = await getDb();
+    const rows = await db
+      .select({ ...ATTEMPT_ROW_COLUMNS, keyReport: lessonAttempts.keyReport })
+      .from(lessonAttempts)
+      .where(eq(lessonAttempts.id, id))
+      .limit(1);
+    return rows[0] ? AttemptReportRowSchema.parse(rows[0]) : null;
+  },
+
+  /** Latest `limit` attempts of a lesson, newest first (attempt ledger). */
+  async historyFor(lessonId: string, limit = 5): Promise<AttemptRow[]> {
+    const db = await getDb();
+    const rows = await db
+      .select(ATTEMPT_ROW_COLUMNS)
+      .from(lessonAttempts)
+      .where(eq(lessonAttempts.lessonId, lessonId))
+      .orderBy(desc(lessonAttempts.attemptNumber))
+      .limit(limit);
+    return rows.map((row) => AttemptRowSchema.parse(row));
+  },
+
+  /** Most recent attempts across ALL lessons (rolling hero statistics). */
+  async recent(limit = 20): Promise<AttemptRow[]> {
+    const db = await getDb();
+    const rows = await db
+      .select(ATTEMPT_ROW_COLUMNS)
+      .from(lessonAttempts)
+      .orderBy(desc(lessonAttempts.finishedAt))
+      .limit(limit);
+    return rows.map((row) => AttemptRowSchema.parse(row));
   },
 };
 
@@ -207,6 +279,57 @@ export const progressRepo = {
       .insert(lessonProgress)
       .values(valid)
       .onConflictDoUpdate({ target: lessonProgress.lessonId, set: valid });
+  },
+
+  /** Reads every progress row (Lessons screen / seeding bulk path). */
+  async all(): Promise<LessonProgress[]> {
+    const db = await getDb();
+    const rows = await db.select().from(lessonProgress);
+    return rows.map((row) => LessonProgressSchema.parse(row));
+  },
+
+  /**
+   * Merges one finished attempt into the §11 best-statistics, bumping the
+   * attempt count — bests only ever move forward (max wpm/accuracy, min
+   * error rate), so replays can never degrade a record.
+   */
+  async mergeAttemptStats(
+    progress: LessonProgress,
+    now: number,
+  ): Promise<void> {
+    const valid = LessonProgressSchema.parse(progress);
+    const db = await getDb();
+    await db
+      .insert(lessonProgress)
+      .values(valid)
+      .onConflictDoUpdate({
+        target: lessonProgress.lessonId,
+        set: {
+          bestWpm: sql`max(${lessonProgress.bestWpm}, excluded.best_wpm)`,
+          bestAccuracy: sql`max(${lessonProgress.bestAccuracy}, excluded.best_accuracy)`,
+          lowestErrorRate: sql`min(${lessonProgress.lowestErrorRate}, excluded.lowest_error_rate)`,
+          attemptCount: sql`${lessonProgress.attemptCount} + 1`,
+          updatedAt: now,
+        },
+      });
+  },
+
+  /**
+   * Marks a lesson `available` ONLY while it is currently `locked` — the
+   * conditional UPDATE is the re-lock prevention guarantee (§8): completed
+   * or already-available rows are silently untouched.
+   */
+  async unlockIfLocked(lessonId: string, now: number): Promise<void> {
+    const db = await getDb();
+    await db
+      .update(lessonProgress)
+      .set({ status: "available", unlockedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(lessonProgress.lessonId, lessonId),
+          eq(lessonProgress.status, "locked"),
+        ),
+      );
   },
 };
 
