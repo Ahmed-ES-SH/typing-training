@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * Screen registry — the eight top-level screens of the app (PRD §20).
  *
@@ -40,3 +42,6 @@ export const SCREENS: readonly ScreenMeta[] = [
 export function getScreen(id: ScreenId): ScreenMeta {
   return SCREENS.find((screen) => screen.id === id)!;
 }
+
+/** Zod mirror of {@link ScreenId} (settings persistence uses it directly). */
+export const ScreenIdSchema = z.enum(SCREEN_IDS);

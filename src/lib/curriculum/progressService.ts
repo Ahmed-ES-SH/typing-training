@@ -164,3 +164,36 @@ export async function completeAttempt(
 
   return { attempt, verdict, grade: gradeFor(attemptInput), nextLessonId };
 }
+
+/**
+ * §16 custom-module finish path (Phase 7): appends the attempt as
+ * `kind='custom'` and computes presentational verdict/grade — and NOTHING
+ * else. Custom modules live outside the §7/§8 unlock chain: no
+ * `lesson_progress` row is written, no lesson is unlocked (plan §2).
+ */
+export async function completeCustomAttempt(
+  lesson: Lesson,
+  metrics: AttemptMetrics,
+  keyReport: KeyReportEntry[],
+): Promise<AttemptOutcome> {
+  const attempt = await attemptsRepo.insertWithKind(
+    {
+      lessonId: lesson.id,
+      wpm: metrics.wpm,
+      accuracy: metrics.accuracy,
+      errorRate: metrics.errorRate,
+      errorCount: metrics.errorCount,
+      correctChars: metrics.correctChars,
+      incorrectChars: metrics.incorrectChars,
+      backspaceCount: metrics.backspaceCount,
+      durationMs: metrics.durationMs,
+      completed: true,
+      startedAt: metrics.startedAt,
+      finishedAt: metrics.finishedAt,
+    },
+    keyReport,
+    "custom",
+  );
+  const input = { completed: true, accuracy: attempt.accuracy, wpm: attempt.wpm };
+  return { attempt, verdict: "PASS", grade: gradeFor(input), nextLessonId: null };
+}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { getLesson, lessonsByLevel, getLevelMeta } from "../content";
+import { lessonsByLevel, getLevelMeta } from "../content";
 import { KeyboardVisualization } from "../components/KeyboardVisualization";
 import { KeyHeatmapCompact } from "../components/KeyHeatmapCompact";
 import { findTargetKey, FINGERS, getActiveLayout } from "../lib/layout";
@@ -10,6 +10,8 @@ import type { SessionState } from "../lib/engine/types";
 import type { Lesson } from "../lib/schemas";
 import { cn } from "../lib/cn";
 import { lessonStatus, useCurriculumStore } from "../stores/useCurriculumStore";
+import { resolveTypingLesson } from "../stores/useCustomLessonsStore";
+import { useSettingsStore } from "../stores/useSettingsStore";
 import { useSessionStore } from "../stores/useSessionStore";
 import { useUiStore } from "../stores/useUiStore";
 
@@ -72,7 +74,7 @@ function ModuleCard({ lesson, state, progress, onSelect }: {
   if (state === "running") {
     return (
       <div className="relative overflow-hidden rounded-lg border border-primary-container/40 bg-surface-container-high p-space-sm shadow-lg ring-1 ring-primary-container/30">
-        <div className="absolute bottom-0 left-0 top-0 w-1.5 bg-primary-container shadow-[0_0_12px_rgba(249,115,22,0.9)]" />
+        <div className="absolute bottom-0 left-0 top-0 w-1.5 bg-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(0.9_*_var(--accent-alpha)))]" />
         <div className="mb-1 flex items-center justify-between pl-1">
           <div className="flex items-center gap-space-xs">
             <span className="relative flex h-2 w-2">
@@ -393,7 +395,7 @@ function CodeBuffer({ lesson, engineState, running }: {
               }`}
             >
               {isActive && (
-                <div className="absolute bottom-0 left-0 top-0 w-1.5 rounded-l bg-primary-container shadow-[0_0_12px_rgba(249,115,22,0.8)]" />
+                <div className="absolute bottom-0 left-0 top-0 w-1.5 rounded-l bg-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(0.8_*_var(--accent-alpha)))]" />
               )}
               <span
                 className={`w-12 select-none pr-5 text-right font-code-sm text-code-sm ${
@@ -422,7 +424,7 @@ function CodeBuffer({ lesson, engineState, running }: {
                     return (
                       <span key={globalIndex} className="relative inline-block">
                         {isCurrent && (
-                          <span className="absolute -left-0.5 top-1/2 h-5 w-0.5 -translate-y-1/2 animate-pulse bg-primary shadow-[0_0_8px_rgba(249,115,22,1)]" />
+                          <span className="absolute -left-0.5 top-1/2 h-5 w-0.5 -translate-y-1/2 animate-pulse bg-primary shadow-[0_0_8px_rgb(249_115_22_calc(1_*_var(--accent-alpha)))]" />
                         )}
                         <span
                           className={
@@ -442,7 +444,7 @@ function CodeBuffer({ lesson, engineState, running }: {
                   })
                 )}
                 {caretAtLineEnd && (
-                  <span className="ml-0.5 inline-block h-6 w-2.5 animate-pulse bg-primary-container shadow-[0_0_12px_rgba(249,115,22,1)]" />
+                  <span className="ml-0.5 inline-block h-6 w-2.5 animate-pulse bg-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(1_*_var(--accent-alpha)))]" />
                 )}
               </span>
             </div>
@@ -487,16 +489,19 @@ export default function TypingSessionScreen() {
   }, [heatmapVisible, heatmapData.length]);
 
   // Start the param-selected lesson exactly once per navigation (§3.8):
-  // the store resets to idle when a lesson is chosen elsewhere.
+  // the store resets to idle when a lesson is chosen elsewhere. Curriculum
+  // ids resolve from the bundled content; `custom-<uuid>` refs load the
+  // user's module from the DB (Phase 7 §16).
   const startedFor = useRef<string | null>(null);
   useEffect(() => {
     const lessonId = sessionParams?.lessonId ?? null;
     if (phase === "idle" && lessonId !== null && startedFor.current !== lessonId) {
-      const selected = getLesson(lessonId);
-      if (selected) {
-        startedFor.current = lessonId;
-        void startLesson(selected);
-      }
+      void resolveTypingLesson(lessonId).then((selected) => {
+        if (selected) {
+          startedFor.current = lessonId;
+          void startLesson(selected);
+        }
+      });
     }
   }, [phase, sessionParams, startLesson]);
 
@@ -654,7 +659,7 @@ export default function TypingSessionScreen() {
           <div className="flex flex-col gap-1">
             <div className="relative h-2 w-full overflow-hidden rounded-full border border-surface-container-highest/30 bg-surface-container-lowest">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-secondary-container via-primary-container to-primary shadow-[0_0_8px_rgba(249,115,22,0.6)] transition-all duration-300"
+                className="h-full rounded-full bg-gradient-to-r from-secondary-container via-primary-container to-primary shadow-[0_0_8px_rgb(249_115_22_calc(0.6_*_var(--accent-alpha)))] transition-all duration-300"
                 style={{ width: `${metrics ? Math.min(100, metrics.progressPct) : 0}%` }}
               />
             </div>
@@ -703,7 +708,7 @@ export default function TypingSessionScreen() {
               <span>60% MECH PROGRAMMER DECK</span>
             </span>
             <span className="flex items-center gap-1 text-[10px] text-on-surface-variant">
-              <span className="h-2 w-2 rounded bg-primary-container shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
+              <span className="h-2 w-2 rounded bg-primary-container shadow-[0_0_8px_rgb(249_115_22_calc(0.8_*_var(--accent-alpha)))]" />
               <span>
                 Active Sequence Keys:{" "}
                 {Array.from(upcoming).map((char, i) => (
@@ -747,7 +752,11 @@ export default function TypingSessionScreen() {
               <KeyHeatmapCompact data={heatmapData} />
             </div>
           )}
-          <KeyboardVisualization nextChar={nextCharValue} />
+          <KeyboardVisualization
+            nextChar={nextCharValue}
+            highlightNextKey={useSettingsStore.getState().settings.highlightNextKey}
+            fingerGuides={useSettingsStore.getState().settings.fingerGuides}
+          />
         </div>
 
         {/* Session finished overlay (minimal inline summary — full Results
@@ -806,7 +815,7 @@ export default function TypingSessionScreen() {
               <button
                 type="button"
                 onClick={() => lesson && void startLesson(lesson)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary-container py-2 font-label-md text-label-md font-bold text-on-primary-container shadow-[0_0_14px_rgba(249,115,22,0.4)] transition-all hover:bg-tertiary-container"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary-container py-2 font-label-md text-label-md font-bold text-on-primary-container shadow-[0_0_14px_rgb(249_115_22_calc(0.4_*_var(--accent-alpha)))] transition-all hover:bg-tertiary-container"
               >
                 <span className="material-symbols-outlined text-[16px]">refresh</span>
                 <span>RETRY LESSON</span>

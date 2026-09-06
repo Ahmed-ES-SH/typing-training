@@ -50,6 +50,9 @@ export interface SessionState {
   readonly finishedAt: number | null;
 }
 
+/** §20 backspace policy (Settings → Training Preferences). */
+export type BackspacePolicy = "counted" | "free" | "forbidden";
+
 export interface SessionOptions {
   /**
    * Decides whether the *expected* char requires Shift. The default rule is
@@ -58,4 +61,12 @@ export interface SessionOptions {
    * `src/lib/layout/`. Override for alternative conventions.
    */
   requiresShift?: (char: string) => boolean;
+  /**
+   * Phase 7 wiring of the Settings backspace policy into the engine's
+   * counting mode (default "counted" — the historical behavior):
+   * - counted: backspace fixes the cell AND counts in `backspaceCount`;
+   * - free: backspace fixes the cell but is NOT counted in the metrics;
+   * - forbidden: backspace is a no-op (content can only move forward).
+   */
+  backspacePolicy?: BackspacePolicy;
 }

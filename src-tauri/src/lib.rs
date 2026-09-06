@@ -4,6 +4,11 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // Phase 7 (§17): file pickers + scoped fs for JSON import/export.
+        // Picking a file through the dialog plugin extends the fs scope to
+        // exactly that path — no static broad grants (§5 offline rule).
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
@@ -34,6 +39,15 @@ pub fn run() {
                             version: 3,
                             description: "intelligence_rollups".into(),
                             sql: include_str!("../migrations/0002_tidy_liz_osborn.sql").into(),
+                            kind: MigrationKind::Up,
+                        },
+                        // Phase 7: custom-lesson draft lifecycle + §17 import
+                        // provenance (is_draft, source, collection_id,
+                        // syntax_family, tags on `custom_lessons`).
+                        Migration {
+                            version: 4,
+                            description: "custom_lesson_lifecycle".into(),
+                            sql: include_str!("../migrations/0003_omniscient_ben_grimm.sql").into(),
                             kind: MigrationKind::Up,
                         },
                     ],

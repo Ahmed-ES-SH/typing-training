@@ -73,6 +73,28 @@ export function setDbForTests(
 }
 
 /**
+ * Raw SQL through the plugin connection (bypasses the drizzle builder).
+ * Used for pragmas that have no builder representation (WAL checkpoint).
+ */
+export async function rawExecute(query: string): Promise<void> {
+  const db = pluginDb ?? (await Database.load(DB_PATH));
+  pluginDb = db;
+  await db.execute(query);
+}
+
+/**
+ * §20 reset flow step: closes the plugin pool so the DB file can be deleted
+ * (see `src/lib/io/reset.ts`). The next `getDb()` reopens and re-migrates.
+ */
+export async function closeDb(): Promise<void> {
+  if (pluginDb !== null) {
+    await pluginDb.close();
+  }
+  pluginDb = null;
+  drizzleDb = null;
+}
+
+/**
  * Dev smoke test: verifies the plugin connection and the migrated schema are
  * reachable through the drizzle bridge. Called at app startup; failures
  * surface as a logged error, never a silent drop.

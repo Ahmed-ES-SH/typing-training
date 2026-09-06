@@ -4,6 +4,8 @@ import { z } from "zod";
 import { getDb } from "./client";
 import {
   bigramStatistics,
+  customLessons,
+  dailyGoals as dailyGoalsTable,
   keyStatistics,
   keyStatisticsDaily,
   lessonAttempts,
@@ -17,6 +19,7 @@ import {
   AttemptRowSchema,
   AttemptSchema,
   BigramStatRowSchema,
+  CustomLessonSchema,
   DrillAttemptRowSchema,
   DrillAttemptSchema,
   KeyReportEntrySchema,
@@ -25,11 +28,13 @@ import {
   KeyStatRowSchema,
   LessonProgressSchema,
   LessonSchema,
+  SettingRowSchema,
   type Attempt,
   type AttemptKind,
   type AttemptReportRow,
   type AttemptRow,
   type BigramStatRow,
+  type CustomLesson,
   type DrillAttempt,
   type DrillAttemptRow,
   type KeyReportEntry,
@@ -39,6 +44,7 @@ import {
   type Lesson,
   type LessonProgress,
   type SessionKind,
+  type SettingRow,
   type TrainingSession,
 } from "../schemas";
 import { TrainingSessionSchema } from "../schemas";
@@ -155,6 +161,35 @@ export const attemptsRepo = {
   },
 
   /**
+   * Appends one attempt row with an explicit ledger `kind` (Phase 7: the
+   * custom-lesson practice path records `kind='custom'`; the curriculum path
+   * keeps the default `lesson`). Numbering stays MAX+1 inside the INSERT.
+   */
+  async insertWithKind(
+    attempt: Omit<Attempt, "attemptNumber">,
+    keyReport: KeyReportEntry[] = [],
+    kind: AttemptKind = "lesson",
+  ): Promise<AttemptRow> {
+    const { attemptNumber: _ignored, ...rest } = AttemptSchema.parse({
+      ...attempt,
+      attemptNumber: 1,
+    });
+    void _ignored;
+    const report = keyReport.map((entry) => KeyReportEntrySchema.parse(entry));
+    const db = await getDb();
+    const rows = await db
+      .insert(lessonAttempts)
+      .values({
+        ...rest,
+        kind,
+        attemptNumber: sql`(select coalesce(max(${lessonAttempts.attemptNumber}), 0) + 1 from lesson_attempts where lesson_id = ${attempt.lessonId} and kind = ${kind})`,
+        keyReport: report,
+      })
+      .returning(ATTEMPT_ROW_COLUMNS);
+    return AttemptRowSchema.parse(rows[0]);
+  },
+
+  /**
    * Appends one DRILL attempt (Phase 6: `kind` = weakness/adaptive,
    * `lesson_id` NULL — generated sets have no lesson row). `attempt_number`
    * is MAX+1 over the same kind, computed inside the INSERT exactly like the
@@ -190,6 +225,54 @@ export const attemptsRepo = {
       .from(lessonAttempts)
       .where(eq(lessonAttempts.kind, kind));
     return Number(rows[0]?.count ?? 0);
+  },
+
+  /**
+   * §16 card markers for one custom module: completed-attempt count + PBs
+   * read straight from the unified ledger (`kind='custom'`). Custom lessons
+   * never touch `lesson_progress`, so this is their only stats source.
+   */
+  async customStats(
+    lessonRef: string,
+  ): Promise<{ attempts: number; bestWpm: number; bestAccuracy: number }> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        attempts: sql<number>`count(*)`,
+        bestWpm: sql<number>`coalesce(max(${lessonAttempts.wpm}), 0)`,
+        bestAccuracy: sql<number>`coalesce(max(${lessonAttempts.accuracy}), 0)`,
+      })
+      .from(lessonAttempts)
+      .where(
+        and(
+          eq(lessonAttempts.lessonId, lessonRef),
+          eq(lessonAttempts.kind, "custom"),
+          eq(lessonAttempts.completed, true),
+        ),
+      );
+    const row = rows[0];
+    return {
+      attempts: Number(row?.attempts ?? 0),
+      bestWpm: Number(row?.bestWpm ?? 0),
+      bestAccuracy: Number(row?.bestAccuracy ?? 0),
+    };
+  },
+
+  /** True when the unified ledger holds at least one row (backup sanity). */
+  async isEmpty(): Promise<boolean> {
+    const db = await getDb();
+    const rows = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(lessonAttempts);
+    return Number(rows[0]?.count ?? 0) === 0;
+  },
+
+  /** Deletes every attempt row (progress-backup replace-all path only —
+   * §10 append-only applies to the app's normal operation, never to a
+   * user-confirmed restore). */
+  async deleteAll(): Promise<void> {
+    const db = await getDb();
+    await db.delete(lessonAttempts);
   },
 
   /** Reads one attempt by row id (Results screen deep-link), with the
@@ -719,6 +802,83 @@ export const sessionsRepo = {
 };
 
 /* ---------------------------------------------------------------------------
+ * custom_lessons (§16 — Phase 7: full CRUD + draft lifecycle)
+ *
+ * Custom modules live OUTSIDE the §7/§8 unlock chain: practicing one
+ * records `kind='custom'` attempts and never writes `lesson_progress`.
+ * Deleting a module keeps its attempt rows in the unified ledger (§10
+ * append-only history is never rewritten); the `lessons` mirror row that
+ * backs the attempt FKs is retained for the same reason — it is invisible
+ * to the curriculum (which reads the bundled generator output).
+ * ------------------------------------------------------------------------- */
+
+export const customLessonsRepo = {
+  /** All custom modules, newest activity first. */
+  async all(): Promise<CustomLesson[]> {
+    const db = await getDb();
+    const rows = await db
+      .select()
+      .from(customLessons)
+      .orderBy(desc(customLessons.updatedAt));
+    return rows.map((row) => CustomLessonSchema.parse(row));
+  },
+
+  async get(id: string): Promise<CustomLesson | null> {
+    const db = await getDb();
+    const rows = await db
+      .select()
+      .from(customLessons)
+      .where(eq(customLessons.id, id))
+      .limit(1);
+    return rows[0] ? CustomLessonSchema.parse(rows[0]) : null;
+  },
+
+  /** Inserts a fully-formed module (Zod-validated before SQL). */
+  async insert(lesson: CustomLesson): Promise<void> {
+    const valid = CustomLessonSchema.parse(lesson);
+    const db = await getDb();
+    await db.insert(customLessons).values(valid);
+  },
+
+  /** Applies a partial patch, bumping `updated_at` (draft toggle, edits). */
+  async update(
+    id: string,
+    patch: Partial<Omit<CustomLesson, "id" | "createdAt">>,
+    updatedAt = Date.now(),
+  ): Promise<CustomLesson | null> {
+    const current = await this.get(id);
+    if (current === null) return null;
+    const valid = CustomLessonSchema.parse({ ...current, ...patch, updatedAt });
+    const db = await getDb();
+    await db
+      .update(customLessons)
+      .set(valid)
+      .where(eq(customLessons.id, id));
+    return valid;
+  },
+
+  /** Removes the module. Attempt rows are RETAINED in the ledger. */
+  async remove(id: string): Promise<void> {
+    const db = await getDb();
+    await db.delete(customLessons).where(eq(customLessons.id, id));
+  },
+
+  async count(): Promise<number> {
+    const db = await getDb();
+    const rows = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(customLessons);
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  /** Deletes every custom module (progress-backup replace-all path). */
+  async deleteAll(): Promise<void> {
+    const db = await getDb();
+    await db.delete(customLessons);
+  },
+};
+
+/* ---------------------------------------------------------------------------
  * settings (§20 — key/value; Phase 5 stores the persisted best streak)
  * ------------------------------------------------------------------------- */
 
@@ -739,6 +899,22 @@ export const settingsRepo = {
       .insert(settings)
       .values({ key, value, updatedAt: now })
       .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: now } });
+  },
+
+  /** Every settings row (backup export + backup restore replace-all). */
+  async all(): Promise<SettingRow[]> {
+    const db = await getDb();
+    const rows = await db.select().from(settings);
+    return rows.map((row) => SettingRowSchema.parse(row));
+  },
+
+  /** Overwrites the whole settings table (restore path only). */
+  async replaceAll(rows: SettingRow[]): Promise<void> {
+    const db = await getDb();
+    await db.delete(settings);
+    if (rows.length > 0) {
+      await db.insert(settings).values(rows.map((row) => SettingRowSchema.parse(row)));
+    }
   },
 };
 
@@ -1051,3 +1227,94 @@ export const statsRepo = {
 
 /** Convenience re-export so callers don't import SessionKind separately. */
 export type { SessionKind };
+
+/* ---------------------------------------------------------------------------
+ * backupRepo (§17 progress backups — Phase 7)
+ *
+ * Verbatim full-table reads/writes for the portable backup envelope. Only the
+ * user-confirmed restore path ever deletes here; the app's normal operation
+ * stays append-only (§10).
+ * ------------------------------------------------------------------------- */
+
+/** A raw attempt row exactly as stored (incl. `kind` + nullable lesson). */
+export interface RawAttemptRow {
+  id: number;
+  lessonId: string | null;
+  kind: AttemptKind;
+  attemptNumber: number;
+  wpm: number;
+  accuracy: number;
+  errorRate: number;
+  errorCount: number;
+  correctChars: number;
+  incorrectChars: number;
+  backspaceCount: number;
+  durationMs: number;
+  completed: boolean;
+  startedAt: number;
+  finishedAt: number;
+  keyReport: KeyReportEntry[] | null;
+}
+
+export const backupRepo = {  async lessonsAll(): Promise<Lesson[]> {
+    const db = await getDb();
+    const rows = await db.select().from(lessons);
+    return rows.map((row) => LessonSchema.parse(row));
+  },
+
+  async attemptsAll(): Promise<RawAttemptRow[]> {
+    const db = await getDb();
+    const rows = await db.select().from(lessonAttempts);
+    return rows.map((row) => ({
+      id: Number(row.id),
+      lessonId: (row.lessonId as string | null) ?? null,
+      kind: row.kind as AttemptKind,
+      attemptNumber: Number(row.attemptNumber),
+      wpm: Number(row.wpm),
+      accuracy: Number(row.accuracy),
+      errorRate: Number(row.errorRate),
+      errorCount: Number(row.errorCount),
+      correctChars: Number(row.correctChars),
+      incorrectChars: Number(row.incorrectChars),
+      backspaceCount: Number(row.backspaceCount),
+      durationMs: Number(row.durationMs),
+      completed: Boolean(row.completed),
+      startedAt: Number(row.startedAt),
+      finishedAt: Number(row.finishedAt),
+      keyReport:
+        row.keyReport === null || row.keyReport === undefined
+          ? null
+          : (z.array(KeyReportEntrySchema).parse(row.keyReport) as KeyReportEntry[]),
+    }));
+  },
+
+  async sessionsAll(): Promise<TrainingSession[]> {
+    const db = await getDb();
+    const rows = await db.select().from(trainingSessions);
+    return rows.map((row) => TrainingSessionSchema.parse(row));
+  },
+
+  async dailyGoalsAll(): Promise<unknown[]> {
+    const db = await getDb();
+    return db.select().from(dailyGoalsTable);
+  },
+
+  /**
+   * Deletes every training-data row in FK-safe order (settings + custom
+   * lessons included — a progress backup restores the WHOLE local state).
+   * Runs inside the caller's transaction (the §17 restore path).
+   */
+  async deleteAllForRestore(
+    tx: Parameters<Parameters<Awaited<ReturnType<typeof getDb>>["transaction"]>[0]>[0],
+  ): Promise<void> {
+    await tx.delete(lessonAttempts);
+    await tx.delete(lessonProgress);
+    await tx.delete(trainingSessions);
+    await tx.delete(keyStatistics);
+    await tx.delete(keyStatisticsDaily);
+    await tx.delete(bigramStatistics);
+    await tx.delete(dailyGoalsTable);
+    await tx.delete(customLessons);
+    await tx.delete(lessons);
+  },
+};

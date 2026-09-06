@@ -28,6 +28,7 @@ import {
   type StatsRange,
 } from "../lib/db/repositories";
 import { cn } from "../lib/cn";
+import { useSettingsStore } from "../stores/useSettingsStore";
 import { fmt1, fmtDuration, fmtInt, moduleNumber } from "../lib/stats/format";
 import { getOverallProgress } from "../lib/stats/progressService";
 import {
@@ -281,6 +282,8 @@ export default function StatisticsScreen() {
   const [slowest, setSlowest] = useState<{ key: string; avgLatencyMs: number }[]>([]);
   const [exporting, setExporting] = useState(false);
   const version = useStatsStore((s) => s.version);
+  // §20 statistics preference: lifetime window overrides the range pills.
+  const heatmapWindowPref = useSettingsStore((s) => s.settings.heatmapWindow);
 
   useEffect(() => {
     void load();
@@ -293,7 +296,13 @@ export default function StatisticsScreen() {
     let cancelled = false;
     (async () => {
       try {
-        const window = range === "30d" ? "30d" : range === "90d" ? "90d" : "lifetime";
+        const window = heatmapWindowPref === "lifetime"
+          ? "lifetime"
+          : range === "30d"
+            ? "30d"
+            : range === "90d"
+              ? "90d"
+              : "lifetime";
         const [data, analysis] = await Promise.all([
           getCharAccuracy(window),
           analyzeWeaknesses(),
@@ -309,7 +318,7 @@ export default function StatisticsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [range, version]);
+  }, [range, version, heatmapWindowPref]);
 
   useEffect(() => {
     let cancelled = false;

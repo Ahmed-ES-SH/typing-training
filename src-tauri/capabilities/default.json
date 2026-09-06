@@ -6,6 +6,24 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "sql:default"
+    "sql:default",
+    "dialog:default",
+    "fs:default",
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [{ "path": "$APPCONFIG/typing_trainer.db*" }]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        { "path": "$APPCONFIG/typing_trainer.db" },
+        { "path": "$APPCONFIG/typing_trainer.db-wal" },
+        { "path": "$APPCONFIG/typing_trainer.db-shm" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [{ "path": "$APPCONFIG/typing_trainer.db*" }]
+    }
   ]
 }

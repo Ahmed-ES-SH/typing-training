@@ -31,6 +31,7 @@ import {
 import type { DrillConfig } from "../lib/schemas";
 import { liveMetrics } from "../lib/engine/metrics";
 import { useSessionStore } from "../stores/useSessionStore";
+import { useSettingsStore } from "../stores/useSettingsStore";
 import { useUiStore } from "../stores/useUiStore";
 
 /**
@@ -124,6 +125,29 @@ function QueueCard({ target }: { target: WeaknessTarget }) {
           Graduated {target.stateSince} • {target.state === "eliminated" ? "eliminated" : "maintenance pool"}
         </div>
       )}
+    </div>
+  );
+}
+
+/** §20 adaptive-lessons gate: disabled start button + note when the
+ * generator injection is switched off in Settings. */
+function AdaptiveGate({ children }: { children: React.ReactNode }) {
+  const adaptive = useSettingsStore((s) => s.settings.adaptiveLessons);
+  if (adaptive) return <>{children}</>;
+  return (
+    <div className="mt-2 flex flex-col gap-1">
+      <button
+        type="button"
+        disabled
+        title="Enable adaptive lessons in Settings"
+        className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg bg-surface-container-high py-2 font-label-md text-sm font-semibold text-on-surface-variant opacity-60"
+      >
+        <span className="material-symbols-outlined text-[16px]">lock</span>
+        <span>ADAPTIVE LESSONS OFF</span>
+      </button>
+      <p className="text-center font-code-sm text-[10px] uppercase tracking-wider text-outline">
+        enable in settings // training
+      </p>
     </div>
   );
 }
@@ -241,17 +265,19 @@ function QueueSidebar({
             </div>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={onStart}
-          disabled={busy || analysis === null}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-primary-container py-2 font-label-md text-sm font-semibold text-on-primary-container shadow-lg shadow-primary-container/25 transition-all hover:bg-tertiary-container disabled:opacity-50"
-        >
-          <span className="material-symbols-outlined text-[16px]">bolt</span>
-          <span>
-            {busy ? "GENERATING…" : running ? "RESTART DRILL" : `START DRILL ${drillNumber}`}
-          </span>
-        </button>
+        <AdaptiveGate>
+          <button
+            type="button"
+            onClick={onStart}
+            disabled={busy || analysis === null}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-primary-container py-2 font-label-md text-sm font-semibold text-on-primary-container shadow-lg shadow-primary-container/25 transition-all hover:bg-tertiary-container disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-[16px]">bolt</span>
+            <span>
+              {busy ? "GENERATING…" : running ? "RESTART DRILL" : `START DRILL ${drillNumber}`}
+            </span>
+          </button>
+        </AdaptiveGate>
       </div>
     </aside>
   );
@@ -587,6 +613,8 @@ export default function WeaknessTrainingScreen() {
 
   const startDrill = async () => {
     if (analysis === null || config === null) return;
+    // §20 adaptive-lessons toggle gates the Phase 6 generator injection.
+    if (!useSettingsStore.getState().settings.adaptiveLessons) return;
     setBusy(true);
     try {
       const position = await getPosition().catch(() => null);
@@ -603,6 +631,7 @@ export default function WeaknessTrainingScreen() {
 
   const regenerate = async () => {
     if (analysis === null || config === null) return;
+    if (!useSettingsStore.getState().settings.adaptiveLessons) return;
     setBusy(true);
     try {
       const position = await getPosition().catch(() => null);
