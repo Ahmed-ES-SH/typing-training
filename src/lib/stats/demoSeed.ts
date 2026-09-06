@@ -1,13 +1,14 @@
 import { CURRICULUM_LESSONS, nextLessonInOrder } from "../../content";
 import {
   attemptsRepo,
+  bigramStatsRepo,
   keyStatsRepo,
   lessonsRepo,
   progressRepo,
   sessionsRepo,
 } from "../db/repositories";
 import { seedCurriculum } from "../curriculum/seed";
-import { getStreak } from "./dailyService";
+import { getStreak, localDayKey } from "./dailyService";
 
 /**
  * DEV-ONLY demo-data seeder (Phase 5 plan §3.6).
@@ -148,7 +149,9 @@ export async function seedDemoHistory(now = Date.now()): Promise<{ attempts: num
         lastPassedLessonId = lesson.id;
       }
 
-      // 4. Key statistics: weak `{`/`:`, improving accuracy elsewhere.
+      // 4. Key statistics: weak `{`/`:`, improving accuracy elsewhere. The
+      // same events feed lifetime, daily (Phase 6) and bigram rollups so
+      // heatmap/queue/recovery curves reconcile with organic typing.
       const events = sample.map((char) => {
         let missRate: number;
         if (char === "{") missRate = 0.24 - skill * 0.06;
@@ -164,6 +167,8 @@ export async function seedDemoHistory(now = Date.now()): Promise<{ attempts: num
         };
       });
       await keyStatsRepo.recordBatch(events, finishedAt);
+      await keyStatsRepo.recordDaily(events, localDayKey(finishedAt));
+      await bigramStatsRepo.recordBatch(events);
 
       // 5. Training session row (§21) — opened and closed like the real flow.
       const sessionId = `demo-${attemptIndex}`;
@@ -188,6 +193,30 @@ export async function seedDemoHistory(now = Date.now()): Promise<{ attempts: num
   // Leave the curriculum frontier right after the last demo lesson.
   const frontier = nextLessonInOrder(lastPassedLessonId ?? lessons[lessons.length - 1].id);
   if (frontier) await progressRepo.unlockIfLocked(frontier.id, now);
+
+  // 6. A short weakness-drill history (Phase 6): kind='weakness' attempts
+  // with lesson_id NULL, so the Weakness screen header shows a real drill
+  // count and the unified ledger includes every attempt kind.
+  for (let d = 0; d < 12; d++) {
+    const durationMs = Math.round(90_000 + rand() * 40_000);
+    const finishedAt = now - d * 43_200_000 - Math.round(rand() * 3_600_000);
+    const startedAt = finishedAt - durationMs;
+    const accuracy = clamp(84 + rand() * 10, 80, 96);
+    await attemptsRepo.insertDrillAttempt({
+      kind: "weakness",
+      wpm: clamp(28 + rand() * 14, 22, 55),
+      accuracy,
+      errorRate: clamp(100 - accuracy, 0, 100),
+      errorCount: Math.round((100 - accuracy) / 2),
+      correctChars: 112,
+      incorrectChars: Math.round(120 * ((100 - accuracy) / 300)),
+      backspaceCount: Math.round(2 + rand() * 5),
+      durationMs,
+      completed: true,
+      startedAt,
+      finishedAt,
+    });
+  }
 
   // Persist the demo best streak (same path as live training).
   await getStreak(now);

@@ -1,15 +1,17 @@
 import { keyStatsRepo } from "../db/repositories";
+import type { KeyStatRow } from "../schemas";
+import { windowAccuracy, type CharSeries } from "../intelligence/analyzer";
 
 /**
- * Weak-key selector (PRD §14/§15 feed; Phase 5 plan §3.3).
+ * Weak-key selector (PRD §14/§15 feed; Phase 5 plan §3.3, Phase 6 refactor).
  *
- * This is the shared entry point Phase 6's adaptive analyzer extends with
- * combo/pattern detection — the signature is designed to grow without
- * breaking the Dashboard (`selectWeakKeys(limit, minPresses)`).
- *
- * Threshold (plan §2): a key needs `minPresses` total samples before it can
- * be called weak — one-off typos must not masquerade as weakness. Ordering:
- * lowest accuracy first (ties: more misses first), computed by SQL.
+ * Phase 6: the threshold/ordering decision now lives in the intelligence
+ * analyzer (`windowAccuracy` over per-char series — the exact logic the
+ * 30-day weakness queue uses); this lifetime variant feeds each key's
+ * aggregate through it as a single synthetic day. Signature and behavior
+ * are preserved for the Dashboard radar: lowest accuracy first (ties: more
+ * misses first, computed by SQL), `minPresses` gate before a key may be
+ * called weak.
  */
 
 export interface WeakKey {
@@ -26,13 +28,28 @@ export async function selectWeakKeys(
   minPresses = 30,
 ): Promise<WeakKey[]> {
   const rows = await keyStatsRepo.weakKeys(minPresses, limit);
-  return rows.map((row) => ({
+  return rows.map(toWeakKey).slice(0, limit);
+}
+
+/** Maps one lifetime row through the analyzer's accuracy window logic. */
+function toWeakKey(row: KeyStatRow): WeakKey {
+  const series: CharSeries = {
     key: row.key,
     shiftRequired: row.shiftRequired,
-    accuracy: row.totalPresses > 0
-      ? (row.correctPresses / row.totalPresses) * 100
-      : 0,
+    rows: [
+      {
+        day: "",
+        presses: row.totalPresses,
+        correct: row.correctPresses,
+      },
+    ],
+  };
+  const window = windowAccuracy(series.rows, 1);
+  return {
+    key: row.key,
+    shiftRequired: row.shiftRequired,
+    accuracy: window?.accuracy ?? 0,
     presses: row.totalPresses,
     misses: row.incorrectPresses,
-  }));
+  };
 }

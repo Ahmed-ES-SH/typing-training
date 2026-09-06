@@ -15,6 +15,13 @@
       "when": 1788641300059,
       "tag": "0001_gorgeous_ben_grimm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788650109249,
+      "tag": "0002_tidy_liz_osborn",
+      "breakpoints": true
     }
   ]
 }
