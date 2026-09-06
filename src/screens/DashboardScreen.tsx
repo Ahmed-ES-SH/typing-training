@@ -4,6 +4,7 @@ import { getLevelMeta, getLesson } from "../content";
 import { MasteryGauge, tierLabel } from "../components/MasteryGauge";
 import { Sparkline } from "../components/Sparkline";
 import { StatCard } from "../components/StatCard";
+import { ConsistencyStrip } from "../components/ConsistencyStrip";
 import { evaluateAttempt } from "../lib/curriculum/rules";
 import { attemptsRepo, progressRepo, statsRepo } from "../lib/db/repositories";
 import { cn } from "../lib/cn";
@@ -17,17 +18,19 @@ import {
   moduleNumber,
 } from "../lib/stats/format";
 import {
-  DEFAULT_DAILY_GOALS,
+  getConsistency,
   getStreak,
-  getTodayActuals,
-  type DailyActuals,
+  todayProgress,
+  type DayConsistency,
   type StreakInfo,
+  type TodayProgress,
 } from "../lib/stats/dailyService";
 import { getOverallProgress, getPosition, type CurriculumPosition, type OverallProgress } from "../lib/stats/progressService";
 import { analyzeWeaknesses, targetsToWeakKeys } from "../lib/intelligence/analyzer";
 import type { WeakKey } from "../lib/stats/weaknessService";
 import type { AttemptRow } from "../lib/schemas";
 import { useCurriculumStore } from "../stores/useCurriculumStore";
+import { useSettingsStore } from "../stores/useSettingsStore";
 import { useStatsStore } from "../stores/useStatsStore";
 import { useUiStore } from "../stores/useUiStore";
 
@@ -48,7 +51,8 @@ interface DashboardData {
   progress: OverallProgress;
   position: CurriculumPosition;
   streak: StreakInfo;
-  today: DailyActuals;
+  today: TodayProgress;
+  strip: DayConsistency[];
   weakKeys: WeakKey[];
   recent: AttemptRow[];
   spark: { x: number; y: number }[];
@@ -109,6 +113,7 @@ export default function DashboardScreen() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
   const dbErrorMessage = useCurriculumStore((s) => s.dbError);
+  const lastBackupAt = useSettingsStore((s) => s.settings.lastBackupAt);
   const progressMap = useCurriculumStore((s) => s.progress);
   const now = Date.now();
 
@@ -116,12 +121,16 @@ export default function DashboardScreen() {
     let cancelled = false;
     (async () => {
       try {
-        const [progress, position, streak, today, weakKeys, recent, daily7, dbSizeBytes] =
+        const [progress, position, streak, today, strip, weakKeys, recent, daily7, dbSizeBytes] =
           await Promise.all([
             getOverallProgress(),
             getPosition(),
             getStreak(now),
-            getTodayActuals(now),
+            todayProgress(now),
+            // §18 consistency: last 14 days from the same sources as the
+            // goals panel (training_sessions + lesson_progress) — one
+            // batched read, no new queries per cell.
+            getConsistency(14, now),
             // §3.7: the drill card + radar read the LIVE analyzer queue
             // (rolling 30d, worst-accuracy-first) — the same source the
             // Weakness Training screen uses, so the numbers can never
@@ -150,6 +159,7 @@ export default function DashboardScreen() {
             position,
             streak,
             today,
+            strip,
             weakKeys,
             recent,
             spark,
@@ -287,8 +297,12 @@ export default function DashboardScreen() {
               <StatCard
                 icon="schedule"
                 label="Time Today"
-                value={fmtMinutes(today.minutes)}
-                unit={`of ${DEFAULT_DAILY_GOALS.minutesGoal}m goal`}
+                value={fmtMinutes(today.minutes.actual)}
+                unit={
+                  today.minutes.disabled
+                    ? "goal disabled"
+                    : `of ${today.goals.minutesGoal}m goal`
+                }
               />
             </div>
           </div>
@@ -479,8 +493,12 @@ export default function DashboardScreen() {
 
         {/* ------------------------- Sidebar (1/3) ------------------------- */}
         <div className="flex flex-col gap-space-md">
-          {/* Daily goals (display-only until Phase 8) */}
-          <section className="rounded-xl border border-surface-container-highest/40 bg-surface-container-low p-space-base shadow-xl">
+          {/* Daily goals — live editable targets (§18); a met day renders the
+              completed state (filled + check), never a modal. */}
+          <section
+            aria-label="Daily goals"
+            className="rounded-xl border border-surface-container-highest/40 bg-surface-container-low p-space-base shadow-xl"
+          >
             <div className="mb-2 flex items-center justify-between">
               <h3 className="flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
                 <span className="material-symbols-outlined text-[18px] text-primary-container">
@@ -488,29 +506,67 @@ export default function DashboardScreen() {
                 </span>
                 Daily Goals
               </h3>
-              <span className="font-code-sm text-code-sm font-bold text-outline">
-                {fmtDayStamp(now)}
+              <span className="flex items-center gap-2">
+                {today.metAll && (
+                  <span className="rounded bg-primary-container/25 px-1.5 py-0.5 font-code-sm text-[10px] font-bold tracking-wider text-primary">
+                    MET ✓
+                  </span>
+                )}
+                <span className="font-code-sm text-code-sm font-bold text-outline">
+                  {fmtDayStamp(now)}
+                </span>
               </span>
             </div>
-            <GoalBar
-              icon="schedule"
-              label="Training Time"
-              valueText={`${fmtMinutes(today.minutes)} / ${DEFAULT_DAILY_GOALS.minutesGoal}m`}
-              pct={(today.minutes / DEFAULT_DAILY_GOALS.minutesGoal) * 100}
-            />
-            <GoalBar
-              icon="checklist"
-              label="Lessons Done"
-              valueText={`${today.lessonsDone} / ${DEFAULT_DAILY_GOALS.lessonsGoal}`}
-              pct={(today.lessonsDone / DEFAULT_DAILY_GOALS.lessonsGoal) * 100}
-            />
-            <GoalBar
-              icon="keyboard_command_key"
-              label="Characters"
-              valueText={`${fmtInt(today.charsTyped)} / ${fmtInt(DEFAULT_DAILY_GOALS.charsGoal)}`}
-              pct={(today.charsTyped / DEFAULT_DAILY_GOALS.charsGoal) * 100}
-            />
-            <div className="mt-2 flex items-center gap-2 rounded-lg bg-surface-container-lowest px-space-sm py-1.5 font-code-sm text-code-sm text-on-surface-variant">
+            {today.enabledCount === 0 ? (
+              <p className="rounded-lg border border-dashed border-surface-container-highest bg-surface-container-lowest/50 px-space-sm py-2 text-center font-code-sm text-code-sm text-outline">
+                Goals disabled — set targets in{" "}
+                <button
+                  type="button"
+                  onClick={() => useUiStore.getState().navigate("settings")}
+                  className="font-bold text-primary hover:text-primary-fixed"
+                >
+                  Settings → Training
+                </button>
+                .
+              </p>
+            ) : (
+              <>
+                {!today.minutes.disabled && (
+                  <GoalBar
+                    icon="schedule"
+                    label="Training Time"
+                    valueText={`${fmtMinutes(today.minutes.actual)} / ${today.goals.minutesGoal}m`}
+                    pct={today.minutes.pct}
+                    met={today.minutes.met}
+                  />
+                )}
+                {!today.lessons.disabled && (
+                  <GoalBar
+                    icon="checklist"
+                    label="Lessons Done"
+                    valueText={`${today.lessons.actual} / ${today.goals.lessonsGoal}`}
+                    pct={today.lessons.pct}
+                    met={today.lessons.met}
+                  />
+                )}
+                {!today.chars.disabled && (
+                  <GoalBar
+                    icon="keyboard_command_key"
+                    label="Characters"
+                    valueText={`${fmtInt(today.chars.actual)} / ${fmtInt(today.goals.charsGoal)}`}
+                    pct={today.chars.pct}
+                    met={today.chars.met}
+                  />
+                )}
+                <p className="mt-1 font-code-sm text-[10px] uppercase tracking-wider text-outline">
+                  {today.metCount} of {today.enabledCount} goals met
+                </p>
+              </>
+            )}
+            <div
+              className="mt-2 flex items-center gap-2 rounded-lg bg-surface-container-lowest px-space-sm py-1.5 font-code-sm text-code-sm text-on-surface-variant"
+              title="Streaks count consecutive days with a finished attempt. Missing a goal never breaks a streak — only a day with no training does."
+            >
               <span className="material-symbols-outlined text-[14px] text-primary-container">
                 local_fire_department
               </span>
@@ -518,6 +574,9 @@ export default function DashboardScreen() {
                 Streak: <strong className="font-bold text-primary">{streak.current} days</strong>{" "}
                 • best {streak.best}
               </span>
+            </div>
+            <div className="mt-2">
+              <ConsistencyStrip days={data.strip} variant="compact" />
             </div>
           </section>
 
@@ -625,7 +684,8 @@ export default function DashboardScreen() {
           <DemoSeedButton />
           <span>
             DB: {data.dbSizeBytes !== null ? `${fmtInt(data.dbSizeBytes / 1024 / 1024)} MB` : "—"} • LAST
-            BACKUP: —
+            BACKUP:{" "}
+            {lastBackupAt !== null ? new Date(lastBackupAt).toLocaleDateString() : "—"}
           </span>
         </span>
       </footer>
@@ -651,11 +711,13 @@ function GoalBar({
   label,
   valueText,
   pct,
+  met,
 }: {
   icon: string;
   label: string;
   valueText: string;
   pct: number;
+  met: boolean;
 }) {
   return (
     <div className="mb-2 last:mb-0">
@@ -666,11 +728,23 @@ function GoalBar({
           </span>
           {label}
         </span>
-        <span className="text-on-surface">{valueText}</span>
+        <span className="flex items-center gap-1 text-on-surface">
+          {valueText}
+          {met && (
+            <span aria-label={`${label} goal met`} className="font-bold text-primary">
+              ✓
+            </span>
+          )}
+        </span>
       </div>
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-container-highest">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-secondary-container via-primary-container to-primary"
+          className={cn(
+            "h-full rounded-full",
+            met
+              ? "bg-primary"
+              : "bg-gradient-to-r from-secondary-container via-primary-container to-primary",
+          )}
           style={{ width: `${Math.min(100, Math.max(0, Number.isFinite(pct) ? pct : 0))}%` }}
         />
       </div>

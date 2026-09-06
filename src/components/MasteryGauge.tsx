@@ -4,6 +4,8 @@
  * Pure SVG — no chart library, so it stays in the startup bundle.
  */
 
+import { fmtPct } from "../lib/format";
+
 const SIZE = 128;
 const STROKE = 9;
 const RADIUS = (SIZE - STROKE) / 2;
@@ -40,7 +42,7 @@ export function MasteryGauge({ pct }: { pct: number }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-headline-lg text-2xl font-bold tracking-tight text-on-surface">
-          {safePct.toFixed(1)}%
+          {fmtPct(safePct)}
         </span>
         <span className="font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
           Overall

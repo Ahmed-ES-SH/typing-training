@@ -29,6 +29,7 @@ import {
   type DrillPlan,
 } from "../lib/intelligence/drillService";
 import type { DrillConfig } from "../lib/schemas";
+import { fmt1, fmtClock } from "../lib/format";
 import { liveMetrics } from "../lib/engine/metrics";
 import { useSessionStore } from "../stores/useSessionStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
@@ -61,10 +62,7 @@ const TOOLTIP_STYLE = {
 
 const CURVE_COLORS = ["#ffb4ab", "#ff6d2c", "#d97722", "#ffb783", "#f97316", "#9d4300"];
 
-const fmtClock = (ms: number): string => {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-};
+/* Time rendering comes from the shared `lib/format` util (Phase 8 §3.5). */
 
 /* ---------------------------------------------------------------------------
  * Queue sidebar
@@ -465,7 +463,7 @@ function RecoveryCurves({ analysis }: { analysis: WeaknessAnalysis | null }) {
               <CartesianGrid stroke={GRID} strokeDasharray="3 3" strokeOpacity={0.5} />
               <XAxis dataKey="day" tick={{ fontSize: 9, fill: "#a78b7d", fontFamily: "JetBrains Mono" }} tickLine={false} stroke={GRID} />
               <YAxis domain={[55, 100]} tick={{ fontSize: 9, fill: "#a78b7d", fontFamily: "JetBrains Mono" }} tickLine={false} stroke={GRID} />
-              <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => `${Number(v).toFixed(1)}%`} />
+              <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [`${fmt1(Number(v))}%`, "accuracy"]} />
               <ReferenceLine y={90} stroke="#d97722" strokeDasharray="5 4" strokeOpacity={0.7} />
               <ReferenceLine y={95} stroke="#f97316" strokeDasharray="5 4" strokeOpacity={0.7} />
               {series.keys.map((key, i) => (
@@ -500,13 +498,13 @@ function RecoveryCurves({ analysis }: { analysis: WeaknessAnalysis | null }) {
                       <span className="text-on-surface">{target.key}</span>
                       <span className="text-on-surface-variant">
                         {projection && projection.slopePerDay > 0
-                          ? `improving +${projection.slopePerDay.toFixed(1)}%/day${
+                          ? `improving +${fmt1(projection.slopePerDay)}%/day${
                               projection.etaDays !== null
                                 ? ` — elimination ETA ${projection.etaDays} days`
                                 : ""
                             }`
                           : projection && projection.slopePerDay < 0
-                            ? `declining ${projection.slopePerDay.toFixed(1)}%/day`
+                            ? `declining ${fmt1(projection.slopePerDay)}%/day`
                             : `${Math.round(target.accuracy)}% · ${target.state}`}
                       </span>
                     </span>
@@ -744,7 +742,7 @@ export default function WeaknessTrainingScreen() {
                   />
                   <StatCell
                     label="Accuracy"
-                    value={metrics ? `${metrics.accuracy.toFixed(1)}` : "100.0"}
+                    value={metrics ? fmt1(metrics.accuracy) : "100.0"}
                     suffix="%"
                     note={prevResult ? `last set ${Math.round(prevResult.accuracy)}%` : "first set"}
                     tone={metrics && metrics.accuracy < 90 ? "text-error" : "text-on-surface"}
@@ -791,7 +789,7 @@ export default function WeaknessTrainingScreen() {
             </div>
             <div className="mt-2 grid grid-cols-2 gap-space-sm md:grid-cols-4">
               <StatCell label="WPM" value={Math.round(lastResult.wpm).toString()} tone="text-primary" />
-              <StatCell label="Accuracy" value={lastResult.accuracy.toFixed(1)} suffix="%" />
+              <StatCell label="Accuracy" value={fmt1(lastResult.accuracy)} suffix="%" />
               <StatCell
                 label="Focus Hits"
                 value={lastResult.focus.hits.toString()}
@@ -829,7 +827,7 @@ export default function WeaknessTrainingScreen() {
                 return (
                   <>
                     <StatCell label="Avg WPM" value={Math.round(avgWpm).toString()} tone="text-primary" note="target ≥ 30" />
-                    <StatCell label="Avg Accuracy" value={avgAcc.toFixed(1)} suffix="%" />
+                    <StatCell label="Avg Accuracy" value={fmt1(avgAcc)} suffix="%" />
                     <StatCell label="Focus Hits" value={totalHits.toString()} suffix={`/${totalFocus}`} />
                     <StatCell
                       label="Total Time"

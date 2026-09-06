@@ -248,6 +248,7 @@ function ModuleCard({
           <button
             type="button"
             title={lesson.isDraft ? "Publish before practicing" : "Practice"}
+            aria-label={lesson.isDraft ? "Publish before practicing" : `Practice ${lesson.title}`}
             disabled={lesson.isDraft}
             onClick={onPractice}
             className="rounded bg-surface-container-lowest p-1.5 text-primary transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-40"
@@ -257,6 +258,7 @@ function ModuleCard({
           <button
             type="button"
             title="Edit"
+            aria-label={`Edit ${lesson.title}`}
             onClick={onEdit}
             className="rounded bg-surface-container-lowest p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
           >
@@ -265,6 +267,7 @@ function ModuleCard({
           <button
             type="button"
             title="Delete"
+            aria-label={`Delete ${lesson.title}`}
             onClick={onDelete}
             className="rounded bg-surface-container-lowest p-1.5 text-error transition-colors hover:bg-error-container/30"
           >
@@ -340,6 +343,7 @@ function CollectionCard({
           <button
             type="button"
             title="Export collection"
+            aria-label={`Export collection ${name}`}
             onClick={onExport}
             className="rounded bg-surface-container-lowest p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
           >
@@ -1049,6 +1053,7 @@ function Chip({ char, onRemove }: { char: string; onRemove: () => void }) {
     <button
       type="button"
       title="Remove"
+      aria-label={`Remove ${char === " " ? "space" : char} target`}
       onClick={onRemove}
       className="rounded bg-primary-container/20 px-1.5 py-0.5 font-code-sm text-code-sm font-bold text-primary transition-colors hover:bg-error-container/40 hover:text-error"
     >

@@ -309,6 +309,15 @@
   ::-webkit-scrollbar-thumb:hover {
     background: #584237;
   }
+
+  /* Phase 8 keyboard-navigation polish (§3.5): every interactive element
+   * gets a visible on-palette focus ring. Mouse users are unaffected
+   * (:focus-visible only fires for keyboard focus). */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-primary-container);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 }
 
 /* ---------------------------------------------------------------------------

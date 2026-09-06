@@ -14,6 +14,7 @@ import type { AttemptRow } from "../lib/schemas";
 import type { AttemptReportRow } from "../lib/schemas";
 import type { CustomLesson } from "../lib/schemas";
 import { customIdFromRef, toCurriculumLesson } from "../lib/customLessons/domain";
+import { fmt1, fmtClock, moduleNumber } from "../lib/format";
 import { cn } from "../lib/cn";
 import { useCurriculumStore } from "../stores/useCurriculumStore";
 import { useSessionStore } from "../stores/useSessionStore";
@@ -28,12 +29,7 @@ import { useUiStore } from "../stores/useUiStore";
  * and the Esc / Ctrl+R / Enter shortcut actions.
  */
 
-const fmt1 = (value: number): string => value.toFixed(1);
-
-const fmtClock = (ms: number): string => {
-  const total = Math.floor(ms / 1000);
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-};
+/* Number/time rendering comes from the shared `lib/format` util (Phase 8 §3.5). */
 
 interface ResultsData {
   lessonId: string;
@@ -293,7 +289,7 @@ export default function LessonResultsScreen() {
   const moduleNo = isCustom
     ? "CUSTOM"
     : lesson
-      ? `${lesson.level}.${String(lesson.orderIndex + 1).padStart(2, "0")}`
+      ? moduleNumber(lesson.level, lesson.orderIndex)
       : data.lessonId;
   // §16: the threshold line shows the module's OPTIONAL personal targets;
   // null = dimension not evaluated (the §8 gate never applies here).

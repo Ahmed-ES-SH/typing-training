@@ -751,6 +751,28 @@ export const progressRepo = {
       );
     return Number(rows[0]?.count ?? 0);
   },
+
+  /**
+   * Per-day completed-lesson counts since `fromTs` (Phase 8 consistency
+   * strip), keyed by LOCAL calendar day. The table holds one row per
+   * lesson (~260 rows), so the status-index scan stays trivial.
+   */
+  async completedByDay(fromTs: number): Promise<Array<{ day: string; count: number }>> {
+    const db = await getDb();
+    const bucket = sql<string>`date(${lessonProgress.completedAt} / 1000, 'unixepoch', 'localtime')`;
+    const rows = await db
+      .select({ day: bucket, count: sql<number>`count(*)` })
+      .from(lessonProgress)
+      .where(
+        and(
+          eq(lessonProgress.status, "completed"),
+          gte(lessonProgress.completedAt, fromTs),
+        ),
+      )
+      .groupBy(bucket)
+      .orderBy(asc(bucket));
+    return rows.map((row) => ({ day: String(row.day), count: Number(row.count) }));
+  },
 };
 
 /* ---------------------------------------------------------------------------
@@ -798,6 +820,33 @@ export const sessionsRepo = {
       durationMs: Number(rows[0]?.durationMs ?? 0),
       chars: Number(rows[0]?.chars ?? 0),
     };
+  },
+
+  /**
+   * Per-day training totals since `fromTs` (Phase 8 consistency strip),
+   * keyed by LOCAL calendar day of `started_at` — the same bucketing the
+   * streak query uses, so the strip reconciles with `totalsSince` exactly.
+   * One row per session keeps the scan trivial; the window bound keeps it
+   * constant-size regardless of lifetime history.
+   */
+  async totalsByDay(fromTs: number): Promise<Array<{ day: string; durationMs: number; chars: number }>> {
+    const db = await getDb();
+    const bucket = sql<string>`date(${trainingSessions.startedAt} / 1000, 'unixepoch', 'localtime')`;
+    const rows = await db
+      .select({
+        day: bucket,
+        durationMs: sql<number>`coalesce(sum(${trainingSessions.durationMs}), 0)`,
+        chars: sql<number>`coalesce(sum(${trainingSessions.charsTyped}), 0)`,
+      })
+      .from(trainingSessions)
+      .where(gte(trainingSessions.startedAt, fromTs))
+      .groupBy(bucket)
+      .orderBy(asc(bucket));
+    return rows.map((row) => ({
+      day: String(row.day),
+      durationMs: Number(row.durationMs ?? 0),
+      chars: Number(row.chars ?? 0),
+    }));
   },
 };
 

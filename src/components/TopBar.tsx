@@ -50,7 +50,7 @@ export function TopBar() {
     <header className="z-40 flex h-10 shrink-0 items-center justify-between border-b border-surface-container-highest/40 bg-surface-container-lowest/95 px-space-base shadow-[0_1px_8px_rgba(0,0,0,0.5)] backdrop-blur-xl">
       <div className="flex items-center gap-space-sm">
         {/* Decorative traffic-dot cluster (native decorations stay enabled) */}
-        <div className="flex items-center gap-space-xs">
+        <div aria-hidden="true" className="flex items-center gap-space-xs">
           <div className="h-3 w-3 cursor-pointer rounded-full bg-surface-container-highest transition-colors hover:bg-error" />
           <div className="h-3 w-3 cursor-pointer rounded-full bg-surface-container-highest transition-colors hover:bg-secondary" />
           <div className="h-3 w-3 cursor-pointer rounded-full bg-surface-container-highest transition-colors hover:bg-primary" />

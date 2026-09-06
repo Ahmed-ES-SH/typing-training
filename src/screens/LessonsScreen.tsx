@@ -6,6 +6,7 @@ import {
   type CurriculumLevel,
 } from "../content";
 import { attemptsRepo, keyStatsRepo } from "../lib/db/repositories";
+import { fmt1, moduleNumber } from "../lib/format";
 import type { KeyStatRow, Lesson, LessonProgress } from "../lib/schemas";
 import { cn } from "../lib/cn";
 import { useSettingsStore } from "../stores/useSettingsStore";
@@ -38,7 +39,7 @@ function statusOf(
   return "locked";
 }
 
-const fmt1 = (value: number): string => value.toFixed(1);
+/* Number rendering comes from the shared `lib/format` util (Phase 8 §3.5). */
 
 const LEVEL_ICONS: Record<number, string> = {
   1: "keyboard",
@@ -227,7 +228,7 @@ function ModuleCard({
 }) {
   const startLesson = useCurriculumStore((s) => s.startLesson);
   const status = statusOf(progress);
-  const moduleNo = `${lesson.level}.${String(lesson.orderIndex + 1).padStart(2, "0")}`;
+  const moduleNo = moduleNumber(lesson.level, lesson.orderIndex);
 
   const header = (
     <div className="mb-space-xs flex items-center justify-between">
@@ -928,6 +929,8 @@ export default function LessonsScreen() {
                 type="button"
                 onClick={() => setViewMode("grid")}
                 title="Grid View"
+                aria-label="Grid view"
+                aria-pressed={viewMode === "grid"}
                 className={cn(
                   "rounded p-1.5 transition-all",
                   viewMode === "grid"
@@ -941,6 +944,8 @@ export default function LessonsScreen() {
                 type="button"
                 onClick={() => setViewMode("list")}
                 title="Compact List View"
+                aria-label="Compact list view"
+                aria-pressed={viewMode === "list"}
                 className={cn(
                   "rounded p-1.5 transition-all",
                   viewMode === "list"

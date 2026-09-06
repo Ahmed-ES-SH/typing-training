@@ -1,5 +1,7 @@
 import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 
+import { fmt1 } from "../lib/format";
+
 import type { SparkPoint } from "./Sparkline";
 
 /**
@@ -41,7 +43,7 @@ export default function SparklineChart({
                 day: "numeric",
               })
             }
-            formatter={(value) => [`${Number(value).toFixed(1)} WPM`, "daily avg"]}
+            formatter={(value) => [`${fmt1(Number(value))} WPM`, "daily avg"]}
           />
           <Area
             type="monotone"

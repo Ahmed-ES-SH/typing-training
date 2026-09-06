@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 
+import { fmt1, fmtInt } from "../lib/format";
 import { getActiveLayout, type KeyboardLayout, type KeyDef } from "../lib/layout";
 import { cn } from "../lib/cn";
 import {
@@ -24,9 +25,9 @@ function cellTooltip(cell: HeatCell): string {
   if (cell.kind === "special") return cell.label;
   if (cell.chars.length === 0) return `${cell.label} — no data yet`;
   const splits = cell.chars
-    .map((c) => `${c.char === " " ? "␣" : c.char}: ${c.accuracy.toFixed(0)}%`)
+    .map((c) => `${c.char === " " ? "␣" : c.char}: ${fmtInt(c.accuracy)}%`)
     .join(" · ");
-  return `${cell.label} — ${cell.accuracy?.toFixed(1)}% (${splits})`;
+  return `${cell.label} — ${cell.accuracy !== undefined ? fmt1(cell.accuracy) : "—"}% (${splits})`;
 }
 
 function HeatKey({

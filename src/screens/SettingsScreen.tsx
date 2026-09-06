@@ -33,6 +33,7 @@ import {
   saveTextFile,
 } from "../lib/io/fileIo";
 import { useSettingsStore, type ThemeId } from "../stores/useSettingsStore";
+import { useDailyGoalsStore } from "../stores/useDailyGoalsStore";
 import { cn } from "../lib/cn";
 
 /**
@@ -403,25 +404,10 @@ export default function SettingsScreen() {
                 onChange={(adaptiveLessons) => update({ adaptiveLessons })}
               />
               <SettingRow
-                label="Daily goal"
-                description="Lightweight consistency target shown on the dashboard. Values become editable in the next update."
+                label="Daily goals"
+                description="Lightweight consistency targets shown on the dashboard. A target of 0 disables that goal — a day's goals are met when every enabled goal is reached."
               >
-                <div className="flex items-center gap-space-sm font-code-md text-code-md opacity-60">
-                  <span className="rounded border border-surface-container-highest/50 bg-surface-container px-2 py-1 text-center text-on-surface">
-                    15
-                  </span>
-                  min/day
-                  <span className="text-outline">•</span>
-                  <span className="rounded border border-surface-container-highest/50 bg-surface-container px-2 py-1 text-center text-on-surface">
-                    3
-                  </span>
-                  lessons
-                  <span className="text-outline">•</span>
-                  <span className="rounded border border-surface-container-highest/50 bg-surface-container px-2 py-1 text-center text-on-surface">
-                    500
-                  </span>
-                  chars
-                </div>
+                <DailyGoalInputs />
               </SettingRow>
               <ToggleRow
                 label="Sound feedback"
@@ -684,5 +670,88 @@ export default function SettingsScreen() {
         />
       )}
     </main>
+  );
+}
+
+/* ------------------------- daily goal inputs (§18) ------------------------ */
+
+/** The three §18 goal inputs: key, accessible label, unit and Zod max. */
+const GOAL_FIELDS = [
+  { key: "minutesGoal", label: "Daily minutes goal", unit: "min/day", name: "Minutes", max: 480 },
+  { key: "lessonsGoal", label: "Daily lessons goal", unit: "lessons", name: "Lessons", max: 100 },
+  { key: "charsGoal", label: "Daily characters goal", unit: "chars", name: "Characters", max: 100000 },
+] as const;
+
+/**
+ * Editable daily goals (Phase 8 plan §3.2): the design's inline number
+ * fields, Zod-validated (0–480 min, 0–100 lessons, 0–100k chars) with instant
+ * persist through the Phase 7 store pattern. 0 disables a goal. Invalid
+ * input surfaces inline and never reaches the store (§23).
+ */
+function DailyGoalInputs() {
+  const goals = useDailyGoalsStore((s) => s.goals);
+  const update = useDailyGoalsStore((s) => s.update);
+  const [draft, setDraft] = useState({
+    minutesGoal: String(goals.minutesGoal),
+    lessonsGoal: String(goals.lessonsGoal),
+    charsGoal: String(goals.charsGoal),
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  // Re-sync after hydration / external changes (backup restore, reset).
+  useEffect(() => {
+    setDraft({
+      minutesGoal: String(goals.minutesGoal),
+      lessonsGoal: String(goals.lessonsGoal),
+      charsGoal: String(goals.charsGoal),
+    });
+  }, [goals]);
+
+  const commit = (field: (typeof GOAL_FIELDS)[number], raw: string) => {
+    setDraft((current) => ({ ...current, [field.key]: raw }));
+    if (!/^\d+$/.test(raw.trim())) {
+      setError("Goals must be whole numbers (0 disables).");
+      return;
+    }
+    try {
+      update({ [field.key]: Number(raw.trim()) });
+      setError(null);
+    } catch {
+      setError(`${field.name} must be within 0–${field.max} (0 disables).`);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-space-sm">
+        {GOAL_FIELDS.map((field, index) => (
+          <span key={field.key} className="flex items-center gap-space-sm">
+            {index > 0 && <span className="text-outline">•</span>}
+            <label className="flex items-center gap-1.5 font-code-md text-code-md text-on-surface-variant">
+              <input
+                type="number"
+                min={0}
+                max={field.max}
+                step={1}
+                aria-label={field.label}
+                value={draft[field.key]}
+                onChange={(event) => commit(field, event.target.value)}
+                className="w-20 rounded border border-surface-container-highest/50 bg-surface-container px-2 py-1 text-center text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-container"
+              />
+              {field.unit}
+            </label>
+          </span>
+        ))}
+      </div>
+      {error !== null ? (
+        <p role="alert" className="mt-1 font-code-sm text-code-sm text-error">
+          {error}
+        </p>
+      ) : (
+        <p className="mt-1 font-code-sm text-code-sm text-outline">
+          0 disables a goal — disabled goals leave the met calculation.
+        </p>
+      )}
+    </div>
   );
 }

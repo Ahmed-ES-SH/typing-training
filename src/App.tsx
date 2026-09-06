@@ -4,7 +4,9 @@ import type { ComponentType } from "react";
 import { Shell } from "./components/Shell";
 import { TopBar } from "./components/TopBar";
 import type { ScreenId } from "./lib/screens";
+import { getScreen } from "./lib/screens";
 import { useCurriculumStore, currentLesson } from "./stores/useCurriculumStore";
+import { useDailyGoalsStore } from "./stores/useDailyGoalsStore";
 import { useSettingsStore } from "./stores/useSettingsStore";
 import { useUiStore } from "./stores/useUiStore";
 import CustomLessonsScreen from "./screens/CustomLessonsScreen";
@@ -36,7 +38,15 @@ function App() {
   const activeScreen = useUiStore((state) => state.activeScreen);
   const bootstrap = useCurriculumStore((state) => state.bootstrap);
   const hydrateSettings = useSettingsStore((state) => state.hydrate);
+  const hydrateGoals = useDailyGoalsStore((state) => state.hydrate);
   const ActiveScreen = SCREEN_COMPONENTS[activeScreen];
+
+  // Window title follows the active screen (Phase 8 polish §3.5).
+  useEffect(() => {
+    const titleCase = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+    const screenName = getScreen(activeScreen).label.split("_").map(titleCase).join(" ");
+    document.title = `TypeKernel — ${screenName}`;
+  }, [activeScreen]);
 
   // Phase 4 startup: seed the 260-lesson curriculum and load progress rows
   // (idempotent; failures surface as a graceful in-app error state).
@@ -45,9 +55,10 @@ function App() {
   }, [bootstrap]);
 
   // Phase 7: hydrate preferences from the settings table, then apply the
-  // §20 launch behavior once the curriculum is loaded.
+  // §20 launch behavior once the curriculum is loaded. Phase 8 hydrates the
+  // daily-goal defaults alongside (single boot, no extra paint blocked).
   useEffect(() => {
-    void hydrateSettings().then(() => {
+    void Promise.all([hydrateSettings(), hydrateGoals()]).then(() => {
       const { settings } = useSettingsStore.getState();
 
       // Statistics default range (§20 statistics preference).
@@ -77,8 +88,22 @@ function App() {
         default:
           break; // dashboard is the initial screen already
       }
+
+      performance.mark("typekernel:first-screen-ready");
+      performance.measure(
+        "typekernel:boot-to-screen",
+        "typekernel:main-start",
+        "typekernel:first-screen-ready",
+      );
+      if (import.meta.env.DEV) {
+        const [measure] = performance.getEntriesByName("typekernel:boot-to-screen");
+        // eslint-disable-next-line no-console
+        console.info(
+          `[perf] main → first screen data ready: ${measure?.duration.toFixed(1) ?? "?"} ms (budget ≤ 1500 ms)`,
+        );
+      }
     });
-  }, [hydrateSettings]);
+  }, [hydrateSettings, hydrateGoals]);
 
   // §20 "last screen": persist the active screen for the launch behavior.
   useEffect(() => {

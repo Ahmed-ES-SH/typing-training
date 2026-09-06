@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "perf:budget": "node scripts/perf-budget.mjs",
     "db:generate": "drizzle-kit generate --config=drizzle-kit.config.ts"
   },
   "dependencies": {

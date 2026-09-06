@@ -5,6 +5,7 @@ import { KeyboardVisualization } from "../components/KeyboardVisualization";
 import { KeyHeatmapCompact } from "../components/KeyHeatmapCompact";
 import { findTargetKey, FINGERS, getActiveLayout } from "../lib/layout";
 import { getCharAccuracy, type CharAccuracy } from "../lib/intelligence/heatmap";
+import { fmt1, fmtClock, moduleNumber } from "../lib/format";
 import { liveMetrics } from "../lib/engine/metrics";
 import type { SessionState } from "../lib/engine/types";
 import type { Lesson } from "../lib/schemas";
@@ -48,15 +49,9 @@ function moduleStateOf(
 }
 
 /* ---------------------------------------------------------------------------
- * Small helpers
+ * Small helpers (number/time rendering comes from the shared `lib/format`
+ * util — Phase 8 §3.5; no ad-hoc decimals or clocks here)
  * ------------------------------------------------------------------------- */
-
-const fmt1 = (value: number): string => value.toFixed(1);
-
-const fmtClock = (ms: number): string => {
-  const total = Math.floor(ms / 1000);
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-};
 
 /* ---------------------------------------------------------------------------
  * Sidebar
@@ -68,7 +63,7 @@ function ModuleCard({ lesson, state, progress, onSelect }: {
   progress?: import("../lib/schemas").LessonProgress;
   onSelect: (lesson: Lesson) => void;
 }) {
-  const num = `${lesson.level}.${String(lesson.orderIndex + 1).padStart(2, "0")}`;
+  const num = moduleNumber(lesson.level, lesson.orderIndex);
   const tokens = `Tokens: ${lesson.targetKeys.slice(0, 4).join(" ")}`;
 
   if (state === "running") {
@@ -92,7 +87,7 @@ function ModuleCard({ lesson, state, progress, onSelect }: {
         <div className="flex items-center justify-between pl-3.5 font-code-sm text-code-sm text-on-surface-variant">
           <span className="text-primary-fixed">{tokens}</span>
           {progress && progress.bestWpm > 0 && (
-            <span className="font-semibold text-on-surface">PR: {progress.bestWpm.toFixed(1)} WPM</span>
+            <span className="font-semibold text-on-surface">PR: {fmt1(progress.bestWpm)} WPM</span>
           )}
         </div>
       </div>
@@ -513,6 +508,18 @@ export default function TypingSessionScreen() {
     };
   }, []);
 
+  // Esc backs out to the module list (the abandon above closes the session
+  // row on unmount — same semantics as the Weakness screen's Esc).
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      useUiStore.getState().navigate("lessons");
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, []);
+
   // Global keydown listener — active only while a session is running.
   useEffect(() => {
     if (phase !== "running") return;
@@ -731,6 +738,8 @@ export default function TypingSessionScreen() {
               <button
                 type="button"
                 onClick={() => setHeatmapVisible((v) => !v)}
+                aria-pressed={heatmapVisible}
+                aria-label="Toggle 30-day key accuracy heatmap"
                 className={cn(
                   "ml-3 flex items-center gap-1 rounded border px-2 py-0.5 transition-colors",
                   heatmapVisible

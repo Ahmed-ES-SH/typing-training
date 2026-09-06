@@ -18,8 +18,10 @@ import {
 import { getLesson } from "../content";
 import { StatCard } from "../components/StatCard";
 import { KeyHeatmap } from "../components/KeyHeatmap";
+import { ConsistencyStrip } from "../components/ConsistencyStrip";
 import { analyzeWeaknesses } from "../lib/intelligence/analyzer";
 import { getCharAccuracy, type CharAccuracy } from "../lib/intelligence/heatmap";
+import { getConsistency, type DayConsistency } from "../lib/stats/dailyService";
 import {
   attemptsRepo,
   rangeStart,
@@ -29,7 +31,7 @@ import {
 } from "../lib/db/repositories";
 import { cn } from "../lib/cn";
 import { useSettingsStore } from "../stores/useSettingsStore";
-import { fmt1, fmtDuration, fmtInt, moduleNumber } from "../lib/stats/format";
+import { fmt1, fmtDuration, fmtInt, moduleNumber } from "../lib/format";
 import { getOverallProgress } from "../lib/stats/progressService";
 import {
   HISTORY_PAGE_SIZE,
@@ -122,7 +124,7 @@ function WpmOverTimeChart({ rangeData }: { rangeData: RangeData }) {
           contentStyle={TOOLTIP_STYLE}
           labelFormatter={(value) => tickDay(Number(value))}
           formatter={(value, name) => [
-            `${Number(value).toFixed(1)} WPM`,
+            `${fmt1(Number(value))} WPM`,
             name === "session" ? "session avg" : "daily avg",
           ]}
         />
@@ -167,7 +169,7 @@ function PerLevelWpmChart({ rangeData }: { rangeData: RangeData }) {
         <Tooltip
           contentStyle={TOOLTIP_STYLE}
           cursor={{ fill: "rgba(249,115,22,0.08)" }}
-          formatter={(value) => [`${Number(value).toFixed(1)} WPM`, "mean wpm"]}
+          formatter={(value) => [`${fmt1(Number(value))} WPM`, "mean wpm"]}
         />
         <Bar dataKey="avgWpm" fill={ORANGE} radius={[2, 2, 0, 0]} isAnimationActive={false} />
       </BarChart>
@@ -198,7 +200,7 @@ function AccuracyOverTimeChart({ rangeData }: { rangeData: RangeData }) {
         <Tooltip
           contentStyle={TOOLTIP_STYLE}
           labelFormatter={(value) => tickDay(Number(value))}
-          formatter={(value) => [`${Number(value).toFixed(1)}%`, "daily accuracy"]}
+          formatter={(value) => [`${fmt1(Number(value))}%`, "daily accuracy"]}
         />
         {/* shaded below-gate region */}
         <ReferenceArea y1={88} y2={95} fill="#93000a" fillOpacity={0.18} strokeOpacity={0} />
@@ -239,7 +241,7 @@ function ImprovementChart({ buckets }: { buckets: ImprovementBucket[] }) {
           contentStyle={TOOLTIP_STYLE}
           cursor={{ fill: "rgba(249,115,22,0.08)" }}
           formatter={(value, _name, item) => [
-            `${Number(value).toFixed(1)} WPM`,
+            `${fmt1(Number(value))} WPM`,
             `mean of ${Number(item?.payload?.attempts ?? 0)} attempts`,
           ]}
         />
@@ -279,6 +281,8 @@ export default function StatisticsScreen() {
   const [perLevelMastery, setPerLevelMastery] = useState<PerLevelProgress[]>([]);
   const [improvement, setImprovement] = useState<ImprovementBucket[]>([]);
   const [heatmapData, setHeatmapData] = useState<CharAccuracy[]>([]);
+  const [consistency, setConsistency] = useState<DayConsistency[] | null>(null);
+  const [consistencyError, setConsistencyError] = useState(false);
   const [slowest, setSlowest] = useState<{ key: string; avgLatencyMs: number }[]>([]);
   const [exporting, setExporting] = useState(false);
   const version = useStatsStore((s) => s.version);
@@ -324,16 +328,23 @@ export default function StatisticsScreen() {
     let cancelled = false;
     (async () => {
       try {
-        const [progress, buckets] = await Promise.all([
+        const [progress, buckets, strip] = await Promise.all([
           getOverallProgress(),
           statsRepo.improvementBuckets(),
+          // §18 consistency: 90-day bars from the same per-day sources as
+          // the Dashboard strip; failures hide behind the error triad, never
+          // a raw exception.
+          getConsistency(90),
         ]);
         if (!cancelled) {
           setPerLevelMastery(progress.perLevel);
           setImprovement(buckets);
+          setConsistency(strip);
         }
       } catch {
-        // DB unavailable — panels show their empty states.
+        if (!cancelled) {
+          setConsistencyError(true);
+        }
       }
     })();
     return () => {
@@ -567,6 +578,32 @@ export default function StatisticsScreen() {
                 No key statistics in this window yet — finish a lesson and the
                 heatmap fills from your real per-character accuracy.
               </p>
+            )}
+          </section>
+
+          {/* ------------------- Training Consistency ------------------- */}
+          <section className="rounded-xl border border-surface-container-highest/40 bg-surface-container-low p-space-base shadow-xl">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
+                <span className="material-symbols-outlined text-[18px] text-primary-container">
+                  calendar_month
+                </span>
+                Training Consistency // 90-Day
+              </h3>
+              <span className="font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
+                height = minutes trained
+              </span>
+            </div>
+            {consistencyError ? (
+              <p className="rounded-lg border border-error/40 bg-error-container/20 px-space-base py-3 text-center font-code-sm text-code-sm text-error">
+                Consistency unavailable — the training ledger could not be read.
+              </p>
+            ) : (
+              <ConsistencyStrip
+                days={consistency ?? []}
+                variant="wide"
+                loading={consistency === null}
+              />
             )}
           </section>
 
