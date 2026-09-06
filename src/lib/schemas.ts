@@ -61,10 +61,17 @@ export type LessonProgress = z.infer<typeof LessonProgressSchema>;
 
 /* ---------------------------------------------------------------------------
  * Attempts (PRD §10 — append-only; metric columns are never UPDATEd)
+ *
+ * Phase 6: the ledger is unified — `kind` splits lesson / weakness / adaptive
+ * attempts, and `lessonId` is nullable because generated drills have no lesson
+ * row. Drill metrics never touch lesson_progress (plan §2).
  * ------------------------------------------------------------------------- */
 
-export const AttemptSchema = z.object({
-  lessonId: z.string().min(1),
+export const AttemptKindSchema = z.enum(["lesson", "weakness", "adaptive"]);
+export type AttemptKind = z.infer<typeof AttemptKindSchema>;
+
+/** Metric columns shared by every attempt kind (§10 — append-only). */
+const AttemptMetricsShape = {
   attemptNumber: z.number().int().min(1),
   wpm: z.number().min(0),
   accuracy: z.number().min(0).max(100),
@@ -77,8 +84,28 @@ export const AttemptSchema = z.object({
   completed: z.boolean(),
   startedAt: z.number().int().nonnegative(),
   finishedAt: z.number().int().nonnegative(),
+} as const;
+
+/** Lesson attempt (kind is always the DB default "lesson"; lessonId
+ * references the module). */
+export const AttemptSchema = z.object({
+  lessonId: z.string().min(1),
+  ...AttemptMetricsShape,
 });
 export type Attempt = z.infer<typeof AttemptSchema>;
+
+/** Drill attempt (Phase 6 — lessonId NULL, kind weakness/adaptive). */
+export const DrillAttemptSchema = z.object({
+  lessonId: z.null(),
+  kind: z.enum(["weakness", "adaptive"]),
+  ...AttemptMetricsShape,
+});
+export type DrillAttempt = z.infer<typeof DrillAttemptSchema>;
+
+export const DrillAttemptRowSchema = DrillAttemptSchema.extend({
+  id: z.number().int().positive(),
+});
+export type DrillAttemptRow = z.infer<typeof DrillAttemptRowSchema>;
 
 export const AttemptRowSchema = AttemptSchema.extend({
   id: z.number().int().positive(),
@@ -128,6 +155,57 @@ export const KeyStatRowSchema = z.object({
   lastSeenAt: z.number().int().nonnegative(),
 });
 export type KeyStatRow = z.infer<typeof KeyStatRowSchema>;
+
+/** Phase 6: one daily per-key rollup row (`key_statistics_daily`). */
+export const KeyStatDailyRowSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected ISO date"),
+  key: z.string().min(1),
+  shiftRequired: z.boolean(),
+  presses: z.number().int().min(0),
+  correct: z.number().int().min(0),
+});
+export type KeyStatDailyRow = z.infer<typeof KeyStatDailyRowSchema>;
+
+/** Phase 6: one planned-bigram rollup row (`bigram_statistics`). */
+export const BigramStatRowSchema = z.object({
+  pair: z.string().min(2).max(2),
+  total: z.number().int().min(0),
+  incorrect: z.number().int().min(0),
+  avgLatencyMs: z.number().min(0),
+});
+export type BigramStatRow = z.infer<typeof BigramStatRowSchema>;
+
+/* ---------------------------------------------------------------------------
+ * Weakness queue + drill config (Phase 6 — persisted in `settings` §20)
+ * ------------------------------------------------------------------------- */
+
+export const WeakKeyStateSchema = z.enum(["targeted", "maintenance", "eliminated"]);
+export type WeakKeyState = z.infer<typeof WeakKeyStateSchema>;
+
+/** One persisted queue entry (settings key `weakness_queue`). */
+export const QueueEntrySchema = z.object({
+  key: z.string().min(1),
+  shiftRequired: z.boolean(),
+  state: WeakKeyStateSchema,
+  /** Local day key ("YYYY-MM-DD") the current state was reached. */
+  stateSince: z.string(),
+});
+export type QueueEntry = z.infer<typeof QueueEntrySchema>;
+
+/** Drill configuration (design's 4 rows; editable UI arrives in Phase 7). */
+export const DrillConfigSchema = z.object({
+  /** Keystrokes per set (design: 120 keys). */
+  setLength: z.number().int().min(40).max(400),
+  /** Sets per drill session (design: 5). */
+  sets: z.number().int().min(1).max(10),
+  /** Weak-char injection weight, 1-5 (design: AGGRESSIVE ×3). */
+  symbolWeight: z.number().int().min(1).max(5),
+  /** Context corpus style (design: "Code identifiers"). */
+  wordContext: z.enum(["code_identifiers", "plain"]),
+  /** Backspace policy (design: "Counted" — engine already counts fix-ups). */
+  backspacePolicy: z.enum(["counted", "ignored"]),
+});
+export type DrillConfig = z.infer<typeof DrillConfigSchema>;
 
 /* ---------------------------------------------------------------------------
  * Training sessions (§21 — one row per app-level training session)

@@ -17,6 +17,9 @@ import {
 
 import { getLesson } from "../content";
 import { StatCard } from "../components/StatCard";
+import { KeyHeatmap } from "../components/KeyHeatmap";
+import { analyzeWeaknesses } from "../lib/intelligence/analyzer";
+import { getCharAccuracy, type CharAccuracy } from "../lib/intelligence/heatmap";
 import {
   attemptsRepo,
   rangeStart,
@@ -274,12 +277,39 @@ export default function StatisticsScreen() {
 
   const [perLevelMastery, setPerLevelMastery] = useState<PerLevelProgress[]>([]);
   const [improvement, setImprovement] = useState<ImprovementBucket[]>([]);
+  const [heatmapData, setHeatmapData] = useState<CharAccuracy[]>([]);
+  const [slowest, setSlowest] = useState<{ key: string; avgLatencyMs: number }[]>([]);
   const [exporting, setExporting] = useState(false);
+  const version = useStatsStore((s) => s.version);
 
   useEffect(() => {
     void load();
     void loadHistoryPage(0);
   }, [load, loadHistoryPage]);
+
+  // Key Heatmap (§14): window follows the range pills where meaningful
+  // (30d/90d from daily rollups with lifetime fallback; all-time lifetime).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const window = range === "30d" ? "30d" : range === "90d" ? "90d" : "lifetime";
+        const [data, analysis] = await Promise.all([
+          getCharAccuracy(window),
+          analyzeWeaknesses(),
+        ]);
+        if (!cancelled) {
+          setHeatmapData(data);
+          setSlowest(analysis.slowest);
+        }
+      } catch {
+        // DB unavailable — the heatmap shows its no-data cells.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [range, version]);
 
   useEffect(() => {
     let cancelled = false;
@@ -505,14 +535,14 @@ export default function StatisticsScreen() {
             </section>
           </div>
 
-          {/* --------------------- Heatmap placeholder -------------------- */}
+          {/* ------------------------- Key Heatmap ------------------------- */}
           <section className="rounded-xl border border-surface-container-highest/40 bg-surface-container-low p-space-base shadow-xl">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 className="flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
                 <span className="material-symbols-outlined text-[18px] text-primary-container">
                   grid_on
                 </span>
-                Key Heatmap // 30-Day Accuracy
+                Key Heatmap // {range === "all" ? "All-Time" : range === "90d" ? "90-Day" : "30-Day"} Accuracy
               </h3>
               <span className="flex items-center gap-2 font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
                 <span className="rounded bg-error-container px-1.5 py-0.5 text-error">&lt;85% weak</span>
@@ -522,16 +552,13 @@ export default function StatisticsScreen() {
                 <span className="rounded bg-surface-container-high px-1.5 py-0.5">no data</span>
               </span>
             </div>
-            <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-surface-container-highest bg-surface-container-lowest/40 text-center">
-              <div>
-                <p className="font-code-sm text-code-sm font-bold uppercase tracking-widest text-outline">
-                  Key Heatmap — arrives in Phase 6
-                </p>
-                <p className="mt-1 font-code-sm text-[10px] uppercase tracking-wider text-outline-variant">
-                  key_statistics is already accumulating per-character accuracy
-                </p>
-              </div>
-            </div>
+            <KeyHeatmap data={heatmapData} slowest={slowest} />
+            {heatmapData.length === 0 && (
+              <p className="mt-2 rounded-lg border border-dashed border-surface-container-highest bg-surface-container-lowest/40 px-space-base py-3 text-center font-code-sm text-code-sm text-outline">
+                No key statistics in this window yet — finish a lesson and the
+                heatmap fills from your real per-character accuracy.
+              </p>
+            )}
           </section>
 
           {/* ------------------- Raw log + sidebar grid ------------------- */}

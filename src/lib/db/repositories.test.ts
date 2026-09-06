@@ -33,16 +33,18 @@ afterAll(() => {
 });
 
 describe("migration SQL", () => {
-  it("creates all 8 PRD tables plus the 3 planned indexes", () => {
+  it("creates all 8 PRD tables + the 2 Phase 6 rollup tables and indexes", () => {
     const tables = sqlite
       .prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
       )
       .all() as Array<{ name: string }>;
     expect(tables.map((t) => t.name)).toEqual([
+      "bigram_statistics",
       "custom_lessons",
       "daily_goals",
       "key_statistics",
+      "key_statistics_daily",
       "lesson_attempts",
       "lesson_progress",
       "lessons",
@@ -54,6 +56,8 @@ describe("migration SQL", () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx%' ORDER BY name")
       .all() as Array<{ name: string }>;
     expect(indexes.map((i) => i.name)).toEqual([
+      "idx_bigram_statistics_total",
+      "idx_key_statistics_daily_date",
       "idx_lesson_attempts_finished_at",
       "idx_lesson_attempts_lesson_id",
       "idx_lesson_progress_status",

@@ -27,6 +27,15 @@ pub fn run() {
                             sql: include_str!("../migrations/0001_gorgeous_ben_grimm.sql").into(),
                             kind: MigrationKind::Up,
                         },
+                        // Phase 6: intelligence features — bigram_statistics +
+                        // key_statistics_daily rollups; lesson_attempts gains
+                        // `kind` and a nullable lesson_id (drill attempts).
+                        Migration {
+                            version: 3,
+                            description: "intelligence_rollups".into(),
+                            sql: include_str!("../migrations/0002_tidy_liz_osborn.sql").into(),
+                            kind: MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

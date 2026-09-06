@@ -107,7 +107,6 @@ function DemoSeedButton() {
 export default function DashboardScreen() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
-  const [drillHint, setDrillHint] = useState(false);
   const dbErrorMessage = useCurriculumStore((s) => s.dbError);
   const progressMap = useCurriculumStore((s) => s.progress);
   const now = Date.now();
@@ -517,7 +516,7 @@ export default function DashboardScreen() {
             </div>
           </section>
 
-          {/* Weakness drill launcher (engine arrives in Phase 6) */}
+          {/* Weakness drill launcher — Phase 6: functional, live queue */}
           <section className="rounded-xl border border-surface-container-highest/40 bg-surface-container-low p-space-base shadow-xl">
             <div className="mb-1 flex items-center justify-between">
               <h3 className="flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
@@ -531,11 +530,12 @@ export default function DashboardScreen() {
               </span>
             </div>
             <p className="font-code-sm text-code-sm text-on-surface-variant">
-              Auto-generated from your last 50 attempts.
+              Auto-generated from your rolling 30-day key statistics.
             </p>
             {weakKeys.length === 0 ? (
               <p className="mt-2 rounded-lg border border-dashed border-surface-container-highest bg-surface-container-lowest/50 px-space-sm py-2 text-center font-code-sm text-code-sm text-outline">
-                No weak keys yet — keep typing to build key statistics.
+                Complete a few lessons to detect weaknesses — key statistics
+                build as you type.
               </p>
             ) : (
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -551,20 +551,12 @@ export default function DashboardScreen() {
             )}
             <button
               type="button"
-              onClick={() => {
-                useUiStore.getState().navigate("weakness-training");
-                setDrillHint(true);
-              }}
+              onClick={() => useUiStore.getState().navigate("weakness-training")}
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-primary-container py-2 font-label-md text-sm font-semibold text-on-primary-container shadow-lg shadow-primary-container/25 transition-all hover:bg-tertiary-container"
             >
               <span className="material-symbols-outlined text-[16px]">bolt</span>
               Start Weakness Drill
             </button>
-            {drillHint && (
-              <p className="mt-1.5 text-center font-code-sm text-[10px] uppercase tracking-wider text-outline">
-                Drill engine arrives in Phase 6
-              </p>
-            )}
           </section>
 
           {/* Weak keys radar */}

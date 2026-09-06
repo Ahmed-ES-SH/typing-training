@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getLesson, lessonsByLevel, getLevelMeta } from "../content";
 import { KeyboardVisualization } from "../components/KeyboardVisualization";
+import { KeyHeatmapCompact } from "../components/KeyHeatmapCompact";
 import { findTargetKey, FINGERS, getActiveLayout } from "../lib/layout";
+import { getCharAccuracy, type CharAccuracy } from "../lib/intelligence/heatmap";
 import { liveMetrics } from "../lib/engine/metrics";
 import type { SessionState } from "../lib/engine/types";
 import type { Lesson } from "../lib/schemas";
@@ -469,6 +471,21 @@ export default function TypingSessionScreen() {
   const sessionParams = useUiStore((s) => s.params["typing-session"]);
   const progress = useCurriculumStore((s) => s.progress);
 
+  // §14 compact heatmap: data loads once on first toggle (never per
+  // keystroke), and the toggle itself never steals keystroke focus.
+  const [heatmapVisible, setHeatmapVisible] = useState(false);
+  const [heatmapData, setHeatmapData] = useState<CharAccuracy[]>([]);
+  useEffect(() => {
+    if (!heatmapVisible || heatmapData.length > 0) return;
+    let cancelled = false;
+    void getCharAccuracy("30d").then((data) => {
+      if (!cancelled) setHeatmapData(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [heatmapVisible, heatmapData.length]);
+
   // Start the param-selected lesson exactly once per navigation (§3.8):
   // the store resets to idle when a lesson is chosen elsewhere.
   const startedFor = useRef<string | null>(null);
@@ -705,8 +722,31 @@ export default function TypingSessionScreen() {
                   </span>
                 </span>
               )}
+              {/* §14 compact heatmap toggle — weak keys during practice. */}
+              <button
+                type="button"
+                onClick={() => setHeatmapVisible((v) => !v)}
+                className={cn(
+                  "ml-3 flex items-center gap-1 rounded border px-2 py-0.5 transition-colors",
+                  heatmapVisible
+                    ? "border-primary-container/50 bg-primary-container/20 font-bold text-primary"
+                    : "border-surface-container-highest/60 bg-surface-container-lowest text-outline hover:text-on-surface",
+                )}
+                title="Toggle key heatmap (30-day accuracy)"
+              >
+                <span className="material-symbols-outlined text-[12px]">grid_on</span>
+                <span>HEATMAP</span>
+              </button>
             </span>
           </div>
+          {heatmapVisible && (
+            <div className="rounded-lg border border-surface-container-highest/30 bg-surface-container-lowest/60 p-2">
+              <p className="mb-1 text-center font-code-sm text-[9px] uppercase tracking-widest text-outline">
+                Key Heatmap // 30-Day Accuracy (weak keys highlighted)
+              </p>
+              <KeyHeatmapCompact data={heatmapData} />
+            </div>
+          )}
           <KeyboardVisualization nextChar={nextCharValue} />
         </div>
 

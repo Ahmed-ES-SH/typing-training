@@ -12,11 +12,13 @@ import LessonResultsScreen from "./screens/LessonResultsScreen";
 import LessonsScreen from "./screens/LessonsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import TypingSessionScreen from "./screens/TypingSessionScreen";
-import WeaknessTrainingScreen from "./screens/WeaknessTrainingScreen";
 
-/** Statistics is lazy-loaded so recharts stays out of the startup chunk
- * (§25 / Phase 5 plan §2). */
+/** Statistics (recharts) and Weakness Training (recharts + adaptive
+ * generator) are lazy-loaded so the startup chunk stays chart-free (§25). */
 const StatisticsScreen = lazy(() => import("./screens/StatisticsScreen"));
+const WeaknessTrainingScreen = lazy(
+  () => import("./screens/WeaknessTrainingScreen"),
+);
 
 const SCREEN_COMPONENTS: Record<ScreenId, ComponentType> = {
   dashboard: DashboardScreen,

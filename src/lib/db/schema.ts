@@ -62,14 +62,18 @@ export const lessonProgress = sqliteTable(
   (t) => [index("idx_lesson_progress_status").on(t.status)],
 );
 
-/* §10 attempts are append-only: metric columns are never UPDATEd, ever. */
+/* §10 attempts are append-only: metric columns are never UPDATEd, ever.
+ * Phase 6 (migration v3): `kind` splits the unified ledger into lesson /
+ * weakness / adaptive attempts; `lesson_id` became nullable because drills
+ * are generated (no lesson row backs them). */
 export const lessonAttempts = sqliteTable(
   "lesson_attempts",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    lessonId: text("lesson_id")
+    lessonId: text("lesson_id").references(() => lessons.id),
+    kind: text("kind", { enum: ["lesson", "weakness", "adaptive"] })
       .notNull()
-      .references(() => lessons.id),
+      .default("lesson"),
     attemptNumber: integer("attempt_number").notNull(),
     wpm: real("wpm").notNull(),
     accuracy: real("accuracy").notNull(),
@@ -106,6 +110,39 @@ export const keyStatistics = sqliteTable(
     lastSeenAt: integer("last_seen_at").notNull(),
   },
   (t) => [primaryKey({ columns: [t.key, t.shiftRequired] })],
+);
+
+/* Phase 6 (migration v3): daily per-key rollups, written at every finish().
+ * One row per (local calendar day, character, shift requirement) so rolling
+ * 30-day windows (heatmap §14, weakness queue §15, recovery curves) are a
+ * single indexed range scan instead of a full attempt replay. */
+export const keyStatisticsDaily = sqliteTable(
+  "key_statistics_daily",
+  {
+    date: text("date").notNull(),
+    key: text("key").notNull(),
+    shiftRequired: integer("shift_required", { mode: "boolean" }).notNull(),
+    presses: integer("presses").notNull().default(0),
+    correct: integer("correct").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.date, t.key, t.shiftRequired] }),
+    index("idx_key_statistics_daily_date").on(t.date),
+  ],
+);
+
+/* Phase 6 (migration v3): planned-bigram difficulty (§13 "difficult key
+ * combinations"). Pairs come from the expected content stream; a pair is
+ * counted incorrect when either of its chars is mistyped inside it. */
+export const bigramStatistics = sqliteTable(
+  "bigram_statistics",
+  {
+    pair: text("pair").primaryKey(),
+    total: integer("total").notNull().default(0),
+    incorrect: integer("incorrect").notNull().default(0),
+    avgLatencyMs: real("avg_latency_ms").notNull().default(0),
+  },
+  (t) => [index("idx_bigram_statistics_total").on(t.total)],
 );
 
 /* One row per app-level training session (opened at start, closed at finish).

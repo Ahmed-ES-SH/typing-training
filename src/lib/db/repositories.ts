@@ -1,8 +1,11 @@
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { getDb } from "./client";
 import {
+  bigramStatistics,
   keyStatistics,
+  keyStatisticsDaily,
   lessonAttempts,
   lessonProgress,
   lessons,
@@ -13,15 +16,24 @@ import {
   AttemptReportRowSchema,
   AttemptRowSchema,
   AttemptSchema,
+  BigramStatRowSchema,
+  DrillAttemptRowSchema,
+  DrillAttemptSchema,
   KeyReportEntrySchema,
+  KeyStatDailyRowSchema,
   KeyStatEventSchema,
   KeyStatRowSchema,
   LessonProgressSchema,
   LessonSchema,
   type Attempt,
+  type AttemptKind,
   type AttemptReportRow,
   type AttemptRow,
+  type BigramStatRow,
+  type DrillAttempt,
+  type DrillAttemptRow,
   type KeyReportEntry,
+  type KeyStatDailyRow,
   type KeyStatEvent,
   type KeyStatRow,
   type Lesson,
@@ -75,6 +87,7 @@ export const lessonsRepo = {
 const ATTEMPT_ROW_COLUMNS = {
   id: lessonAttempts.id,
   lessonId: lessonAttempts.lessonId,
+  kind: lessonAttempts.kind,
   attemptNumber: lessonAttempts.attemptNumber,
   wpm: lessonAttempts.wpm,
   accuracy: lessonAttempts.accuracy,
@@ -141,6 +154,44 @@ export const attemptsRepo = {
     return AttemptRowSchema.parse(rows[0]);
   },
 
+  /**
+   * Appends one DRILL attempt (Phase 6: `kind` = weakness/adaptive,
+   * `lesson_id` NULL — generated sets have no lesson row). `attempt_number`
+   * is MAX+1 over the same kind, computed inside the INSERT exactly like the
+   * lesson path. Drill attempts never touch `lesson_progress`.
+   */
+  async insertDrillAttempt(
+    attempt: Omit<DrillAttempt, "attemptNumber" | "lessonId">,
+    keyReport: KeyReportEntry[] = [],
+  ): Promise<DrillAttemptRow> {
+    const valid = DrillAttemptSchema.parse({
+      ...attempt,
+      lessonId: null,
+      attemptNumber: 1,
+    });
+    const report = keyReport.map((entry) => KeyReportEntrySchema.parse(entry));
+    const db = await getDb();
+    const rows = await db
+      .insert(lessonAttempts)
+      .values({
+        ...valid,
+        attemptNumber: sql`(select coalesce(max(${lessonAttempts.attemptNumber}), 0) + 1 from lesson_attempts where lesson_id is null and kind = ${valid.kind})`,
+        keyReport: report,
+      })
+      .returning(ATTEMPT_ROW_COLUMNS);
+    return DrillAttemptRowSchema.parse(rows[0]);
+  },
+
+  /** Count of drill attempts of a kind (the "DRILL n //" header number). */
+  async countByKind(kind: AttemptKind): Promise<number> {
+    const db = await getDb();
+    const rows = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(lessonAttempts)
+      .where(eq(lessonAttempts.kind, kind));
+    return Number(rows[0]?.count ?? 0);
+  },
+
   /** Reads one attempt by row id (Results screen deep-link), with the
    * per-attempt key report. */
   async getById(id: number): Promise<AttemptReportRow | null> {
@@ -165,12 +216,30 @@ export const attemptsRepo = {
     return rows.map((row) => AttemptRowSchema.parse(row));
   },
 
-  /** Most recent attempts across ALL lessons (rolling hero statistics). */
+  /** Per-attempt key spotlights of the last `limit` attempts, any kind
+   * (Phase 6: repeated-error-pattern detection over the unified ledger). */
+  async recentKeyReports(limit = 10): Promise<(KeyReportEntry[] | null)[]> {
+    const db = await getDb();
+    const rows = await db
+      .select({ keyReport: lessonAttempts.keyReport })
+      .from(lessonAttempts)
+      .orderBy(desc(lessonAttempts.finishedAt))
+      .limit(limit);
+    return rows.map((row) => {
+      if (row.keyReport === null || row.keyReport === undefined) return null;
+      const parsed = z.array(KeyReportEntrySchema).safeParse(row.keyReport);
+      return parsed.success ? parsed.data : null;
+    });
+  },
+
+  /** Most recent LESSON attempts (rolling hero statistics) — drill rows
+   * have no lesson module to resolve and are excluded. */
   async recent(limit = 20): Promise<AttemptRow[]> {
     const db = await getDb();
     const rows = await db
       .select(ATTEMPT_ROW_COLUMNS)
       .from(lessonAttempts)
+      .where(LESSON_ONLY)
       .orderBy(desc(lessonAttempts.finishedAt))
       .limit(limit);
     return rows.map((row) => AttemptRowSchema.parse(row));
@@ -184,6 +253,7 @@ export const attemptsRepo = {
     const db = await getDb();
     const rows = await db
       .select({ day: DAY_BUCKET })
+      // ALL kinds count toward the streak: a finished drill is training too.
       .from(lessonAttempts)
       .where(eq(lessonAttempts.completed, true))
       .groupBy(DAY_BUCKET)
@@ -191,12 +261,18 @@ export const attemptsRepo = {
     return rows.map((row) => String(row.day));
   },
 
-  /** Total number of attempt rows (optionally within a finished_at window). */
-  async countAll(fromTs: number | null = null): Promise<number> {    const db = await getDb();
+  /** Total number of attempt rows (optionally within a finished_at window).
+   * Lesson-scoped: drill attempts are counted via their own kind queries. */
+  async countAll(fromTs: number | null = null): Promise<number> {
+    const db = await getDb();
     const rows = await db
       .select({ count: sql<number>`count(*)` })
       .from(lessonAttempts)
-      .where(fromTs === null ? undefined : gte(lessonAttempts.finishedAt, fromTs));
+      .where(
+        fromTs === null
+          ? LESSON_ONLY
+          : and(LESSON_ONLY, gte(lessonAttempts.finishedAt, fromTs)),
+      );
     return Number(rows[0]?.count ?? 0);
   },
 
@@ -213,7 +289,11 @@ export const attemptsRepo = {
     const rows = await db
       .select(ATTEMPT_ROW_COLUMNS)
       .from(lessonAttempts)
-      .where(fromTs === null ? undefined : gte(lessonAttempts.finishedAt, fromTs))
+      .where(
+        fromTs === null
+          ? LESSON_ONLY
+          : and(LESSON_ONLY, gte(lessonAttempts.finishedAt, fromTs)),
+      )
       .orderBy(desc(lessonAttempts.finishedAt))
       .limit(pageSize)
       .offset(page * pageSize);
@@ -229,7 +309,11 @@ export const attemptsRepo = {
     const rows = await db
       .select(ATTEMPT_ROW_COLUMNS)
       .from(lessonAttempts)
-      .where(fromTs === null ? undefined : gte(lessonAttempts.finishedAt, fromTs))
+      .where(
+        fromTs === null
+          ? LESSON_ONLY
+          : and(LESSON_ONLY, gte(lessonAttempts.finishedAt, fromTs)),
+      )
       .orderBy(desc(lessonAttempts.finishedAt));
     return rows.map((row) => AttemptRowSchema.parse(row));
   },
@@ -330,6 +414,115 @@ export const keyStatsRepo = {
       )
       .limit(limit);
     return rows.map((row) => KeyStatRowSchema.parse(row));
+  },
+
+  /**
+   * Phase 6 daily rollup: merges one session's key events into TODAY's
+   * `key_statistics_daily` rows — one multi-row upsert, same pattern as
+   * `recordBatch`. `day` is a local calendar key ("YYYY-MM-DD") so rolling
+   * windows are pure SQL range scans (§25: no background jobs).
+   */
+  async recordDaily(events: KeyStatEvent[], day: string): Promise<void> {
+    if (events.length === 0) return;
+    const aggregated = aggregateKeyEvents(
+      events.map((e) => KeyStatEventSchema.parse(e)),
+    );
+    const values = aggregated.map((row) => ({
+      date: day,
+      key: row.key,
+      shiftRequired: row.shiftRequired,
+      presses: row.totalPresses,
+      correct: row.correctPresses,
+    }));
+    const db = await getDb();
+    await db
+      .insert(keyStatisticsDaily)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [keyStatisticsDaily.date, keyStatisticsDaily.key, keyStatisticsDaily.shiftRequired],
+        set: {
+          presses: sql`${keyStatisticsDaily.presses} + excluded.presses`,
+          correct: sql`${keyStatisticsDaily.correct} + excluded.correct`,
+        },
+      });
+  },
+
+  /** All daily rows on/after `sinceDay` ("YYYY-MM-DD"), oldest first. */
+  async dailySince(sinceDay: string): Promise<KeyStatDailyRow[]> {
+    const db = await getDb();
+    const rows = await db
+      .select()
+      .from(keyStatisticsDaily)
+      .where(gte(keyStatisticsDaily.date, sinceDay))
+      .orderBy(asc(keyStatisticsDaily.date));
+    return rows.map((row) => KeyStatDailyRowSchema.parse(row));
+  },
+};
+
+/* ---------------------------------------------------------------------------
+ * bigram_statistics (Phase 6 — §13 difficult key combinations)
+ * ------------------------------------------------------------------------- */
+
+/** Groups validated keystroke events into planned bigram contributions. */
+function aggregateBigramEvents(
+  events: KeyStatEvent[],
+): Map<string, { total: number; incorrect: number; latencySumMs: number }> {
+  const groups = new Map<string, { total: number; incorrect: number; latencySumMs: number }>();
+  for (let i = 1; i < events.length; i++) {
+    const first = events[i - 1];
+    const second = events[i];
+    // Newlines delimit lines — they are not part of any typed bigram.
+    if (first.key === "\n" || second.key === "\n") continue;
+    const pair = `${first.key}${second.key}`;
+    const group = groups.get(pair) ?? { total: 0, incorrect: 0, latencySumMs: 0 };
+    group.total += 1;
+    // §2: a pair is incorrect when either of its chars is mistyped inside it.
+    if (!first.correct || !second.correct) group.incorrect += 1;
+    group.latencySumMs += second.latencyMs;
+    groups.set(pair, group);
+  }
+  return groups;
+}
+
+export const bigramStatsRepo = {
+  /** Records one session's planned bigrams (expected-char stream) in ONE
+   * multi-row upsert: counts merge, latency averages weighted by totals. */
+  async recordBatch(events: KeyStatEvent[]): Promise<void> {
+    if (events.length < 2) return;
+    const aggregated = aggregateBigramEvents(
+      events.map((e) => KeyStatEventSchema.parse(e)),
+    );
+    if (aggregated.size === 0) return;
+    const values = [...aggregated.entries()].map(([pair, g]) => ({
+      pair,
+      total: g.total,
+      incorrect: g.incorrect,
+      avgLatencyMs: g.total > 0 ? g.latencySumMs / g.total : 0,
+    }));
+    const db = await getDb();
+    await db
+      .insert(bigramStatistics)
+      .values(values)
+      .onConflictDoUpdate({
+        target: bigramStatistics.pair,
+        set: {
+          total: sql`${bigramStatistics.total} + excluded.total`,
+          incorrect: sql`${bigramStatistics.incorrect} + excluded.incorrect`,
+          avgLatencyMs: sql`(${bigramStatistics.avgLatencyMs} * ${bigramStatistics.total} + excluded.avg_latency_ms * excluded.total) / (${bigramStatistics.total} + excluded.total)`,
+        },
+      });
+  },
+
+  /** Bigrams with at least `minTotal` planned occurrences, most-typed first
+   * (error rate is computed by the analyzer from the counts). */
+  async all(minTotal = 1): Promise<BigramStatRow[]> {
+    const db = await getDb();
+    const rows = await db
+      .select()
+      .from(bigramStatistics)
+      .where(gte(bigramStatistics.total, minTotal))
+      .orderBy(desc(bigramStatistics.total));
+    return rows.map((row) => BigramStatRowSchema.parse(row));
   },
 };
 
@@ -562,6 +755,10 @@ const DAY_BUCKET = sql<string>`date(${lessonAttempts.finishedAt} / 1000, 'unixep
 /** The §8 gate as a SQL expression (accuracy >= 95 AND wpm > 45). */
 const GATE_PASSED = sql<number>`case when ${lessonAttempts.accuracy} >= 95 and ${lessonAttempts.wpm} > 45 then 1 else 0 end`;
 
+/** Lesson charts/ledgers are scoped to lesson attempts — drill attempts
+ * (Phase 6, lesson_id NULL) never pollute lesson aggregates. */
+const LESSON_ONLY = eq(lessonAttempts.kind, "lesson");
+
 export type StatsRange = "30d" | "90d" | "all";
 
 /** Start-of-window epoch ms for a range (null = unbounded). */
@@ -634,8 +831,8 @@ export const statsRepo = {
       .from(lessonAttempts)
       .where(
         fromTs === null
-          ? eq(lessonAttempts.completed, true)
-          : and(eq(lessonAttempts.completed, true), gte(lessonAttempts.finishedAt, fromTs)),
+          ? and(eq(lessonAttempts.completed, true), LESSON_ONLY)
+          : and(eq(lessonAttempts.completed, true), LESSON_ONLY, gte(lessonAttempts.finishedAt, fromTs)),
       );
     const row = rows[0];
     const best = await this.bestAttempt(fromTs);
@@ -664,13 +861,16 @@ export const statsRepo = {
       .from(lessonAttempts)
       .where(
         fromTs === null
-          ? eq(lessonAttempts.completed, true)
-          : and(eq(lessonAttempts.completed, true), gte(lessonAttempts.finishedAt, fromTs)),
+          ? and(eq(lessonAttempts.completed, true), LESSON_ONLY)
+          : and(eq(lessonAttempts.completed, true), LESSON_ONLY, gte(lessonAttempts.finishedAt, fromTs)),
       )
       .orderBy(desc(lessonAttempts.wpm))
       .limit(1);
     const row = rows[0];
-    return row ? { wpm: Number(row.wpm), lessonId: row.lessonId, finishedAt: row.finishedAt } : null;
+    // lesson_id is non-null for lesson rows (guaranteed by LESSON_ONLY).
+    return row
+      ? { wpm: Number(row.wpm), lessonId: row.lessonId as string, finishedAt: row.finishedAt }
+      : null;
   },
 
   /** Mean of the last `limit` completed attempts (§2 "recent" figure). */
@@ -688,7 +888,7 @@ export const statsRepo = {
         db
           .select({ wpm: lessonAttempts.wpm, accuracy: lessonAttempts.accuracy })
           .from(lessonAttempts)
-          .where(eq(lessonAttempts.completed, true))
+          .where(and(eq(lessonAttempts.completed, true), LESSON_ONLY))
           .orderBy(desc(lessonAttempts.finishedAt))
           .limit(limit)
           .as("recent"),
@@ -712,8 +912,8 @@ export const statsRepo = {
       .from(lessonAttempts)
       .where(
         fromTs === null
-          ? eq(lessonAttempts.completed, true)
-          : and(eq(lessonAttempts.completed, true), gte(lessonAttempts.finishedAt, fromTs)),
+          ? and(eq(lessonAttempts.completed, true), LESSON_ONLY)
+          : and(eq(lessonAttempts.completed, true), LESSON_ONLY, gte(lessonAttempts.finishedAt, fromTs)),
       )
       .groupBy(DAY_BUCKET)
       .orderBy(asc(DAY_BUCKET));
@@ -741,8 +941,8 @@ export const statsRepo = {
       .from(lessonAttempts)
       .where(
         fromTs === null
-          ? eq(lessonAttempts.completed, true)
-          : and(eq(lessonAttempts.completed, true), gte(lessonAttempts.finishedAt, fromTs)),
+          ? and(eq(lessonAttempts.completed, true), LESSON_ONLY)
+          : and(eq(lessonAttempts.completed, true), LESSON_ONLY, gte(lessonAttempts.finishedAt, fromTs)),
       )
       .orderBy(asc(lessonAttempts.finishedAt));
     return rows.map((row) => ({
@@ -750,7 +950,8 @@ export const statsRepo = {
       finishedAt: Number(row.finishedAt),
       wpm: Number(row.wpm),
       accuracy: Number(row.accuracy),
-      lessonId: row.lessonId,
+      // Non-null for lesson rows (guaranteed by LESSON_ONLY).
+      lessonId: row.lessonId as string,
       attemptNumber: Number(row.attemptNumber),
     }));
   },
@@ -768,8 +969,8 @@ export const statsRepo = {
       .innerJoin(lessons, eq(lessons.id, lessonAttempts.lessonId))
       .where(
         fromTs === null
-          ? eq(lessonAttempts.completed, true)
-          : and(eq(lessonAttempts.completed, true), gte(lessonAttempts.finishedAt, fromTs)),
+          ? and(eq(lessonAttempts.completed, true), LESSON_ONLY)
+          : and(eq(lessonAttempts.completed, true), LESSON_ONLY, gte(lessonAttempts.finishedAt, fromTs)),
       )
       .groupBy(lessons.level)
       .orderBy(asc(lessons.level));
@@ -790,7 +991,7 @@ export const statsRepo = {
     const multiLesson = db
       .select({ lessonId: lessonAttempts.lessonId })
       .from(lessonAttempts)
-      .where(eq(lessonAttempts.completed, true))
+      .where(and(eq(lessonAttempts.completed, true), LESSON_ONLY))
       .groupBy(lessonAttempts.lessonId)
       .having(sql`count(*) >= 3`)
       .as("multi_lesson");
@@ -803,7 +1004,7 @@ export const statsRepo = {
       })
       .from(lessonAttempts)
       .innerJoin(multiLesson, eq(multiLesson.lessonId, lessonAttempts.lessonId))
-      .where(eq(lessonAttempts.completed, true))
+      .where(and(eq(lessonAttempts.completed, true), LESSON_ONLY))
       .groupBy(sql`bucket`, sql`bucketOrder`)
       .orderBy(sql`bucketOrder`);
     return rows.map((row) => ({
@@ -824,7 +1025,7 @@ export const statsRepo = {
       })
       .from(lessonAttempts)
       .where(
-        and(eq(lessonAttempts.completed, true), eq(lessonAttempts.attemptNumber, 1)),
+        and(eq(lessonAttempts.completed, true), LESSON_ONLY, eq(lessonAttempts.attemptNumber, 1)),
       );
     return {
       firstTries: Number(rows[0]?.firstTries ?? 0),
