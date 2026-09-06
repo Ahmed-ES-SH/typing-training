@@ -469,12 +469,19 @@ export interface RecoveryProjection {
 /**
  * Linear regression on the per-day accuracies (display-only estimates for
  * the design's "improving +1.2%/day — elimination ETA 9 days" rows).
+ *
+ * `currentOverride` anchors the projection at the SAME rolling-30d accuracy
+ * the queue cards display (plan §2: one source of truth per number) instead
+ * of the last single day, which would contradict the queue card.
  */
-export function projectRecovery(rows: DayAccuracy[]): RecoveryProjection {
+export function projectRecovery(
+  rows: DayAccuracy[],
+  currentOverride?: number,
+): RecoveryProjection {
   const points = rows
     .filter((r) => r.presses >= 1)
     .map((r) => (r.correct / r.presses) * 100);
-  const current = points.length > 0 ? points[points.length - 1] : 0;
+  const current = currentOverride ?? (points.length > 0 ? points[points.length - 1] : 0);
   if (points.length < 2) {
     return { slopePerDay: 0, current, projected: current, etaDays: null };
   }
@@ -494,4 +501,24 @@ export function projectRecovery(rows: DayAccuracy[]): RecoveryProjection {
     etaDays = Math.ceil((ELIMINATED_THRESHOLD - current) / slopePerDay);
   }
   return { slopePerDay, current, projected, etaDays };
+}
+
+/**
+ * Maps analyzer targets onto the Phase 5 `WeakKey` shape, sorted
+ * worst-accuracy-first — the single data source for the Dashboard's drill
+ * card chips and Weak Keys Radar (plan §3.7: one live queue, no divergent
+ * lifetime selector).
+ */
+export function targetsToWeakKeys(
+  analysis: WeaknessAnalysis,
+): { key: string; shiftRequired: boolean; accuracy: number; presses: number; misses: number }[] {
+  return analysis.targets
+    .map((t) => ({
+      key: t.key,
+      shiftRequired: t.shiftRequired,
+      accuracy: t.accuracy,
+      presses: t.presses,
+      misses: t.misses,
+    }))
+    .sort((a, b) => a.accuracy - b.accuracy);
 }

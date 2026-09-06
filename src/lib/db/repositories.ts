@@ -995,20 +995,22 @@ export const statsRepo = {
       .groupBy(lessonAttempts.lessonId)
       .having(sql`count(*) >= 3`)
       .as("multi_lesson");
+    // The GROUP BY must inline the CASE expression itself: SQLite does not
+    // resolve SELECT aliases inside GROUP BY for this query shape.
+    const bucketExpr = sql<number>`case when ${lessonAttempts.attemptNumber} <= 4 then ${lessonAttempts.attemptNumber} else 5 end`;
     const rows = await db
       .select({
-        bucket: sql<string>`case when ${lessonAttempts.attemptNumber} <= 4 then cast(${lessonAttempts.attemptNumber} as text) else '5+' end`,
-        bucketOrder: sql<number>`case when ${lessonAttempts.attemptNumber} <= 4 then ${lessonAttempts.attemptNumber} else 5 end`,
+        bucketOrder: bucketExpr,
         attempts: sql<number>`count(*)`,
         avgWpm: sql<number>`avg(${lessonAttempts.wpm})`,
       })
       .from(lessonAttempts)
       .innerJoin(multiLesson, eq(multiLesson.lessonId, lessonAttempts.lessonId))
       .where(and(eq(lessonAttempts.completed, true), LESSON_ONLY))
-      .groupBy(sql`bucket`, sql`bucketOrder`)
-      .orderBy(sql`bucketOrder`);
+      .groupBy(bucketExpr)
+      .orderBy(bucketExpr);
     return rows.map((row) => ({
-      bucket: String(row.bucket),
+      bucket: Number(row.bucketOrder) === 5 ? "5+" : String(Number(row.bucketOrder)),
       attempts: Number(row.attempts),
       avgWpm: Number(row.avgWpm),
     }));

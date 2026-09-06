@@ -24,7 +24,8 @@ import {
   type StreakInfo,
 } from "../lib/stats/dailyService";
 import { getOverallProgress, getPosition, type CurriculumPosition, type OverallProgress } from "../lib/stats/progressService";
-import { selectWeakKeys, type WeakKey } from "../lib/stats/weaknessService";
+import { analyzeWeaknesses, targetsToWeakKeys } from "../lib/intelligence/analyzer";
+import type { WeakKey } from "../lib/stats/weaknessService";
 import type { AttemptRow } from "../lib/schemas";
 import { useCurriculumStore } from "../stores/useCurriculumStore";
 import { useStatsStore } from "../stores/useStatsStore";
@@ -121,7 +122,11 @@ export default function DashboardScreen() {
             getPosition(),
             getStreak(now),
             getTodayActuals(now),
-            selectWeakKeys(5, 30),
+            // §3.7: the drill card + radar read the LIVE analyzer queue
+            // (rolling 30d, worst-accuracy-first) — the same source the
+            // Weakness Training screen uses, so the numbers can never
+            // contradict it.
+            analyzeWeaknesses().then(targetsToWeakKeys),
             attemptsRepo.recent(5),
             statsRepo.dailySeries(now - 7 * 86_400_000),
             statsRepo.dbSizeBytes(),

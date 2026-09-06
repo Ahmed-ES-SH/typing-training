@@ -19,7 +19,9 @@ import {
   MAX_TARGETED,
   MIN_PRESSES,
   patternsFromReports,
+  projectRecovery,
   rankCombos,
+  targetsToWeakKeys,
   windowAccuracy,
   type CharSeries,
   type DayAccuracy,
@@ -373,5 +375,47 @@ describe("pure aggregation helpers", () => {
       10,
     );
     expect(combos.map((c) => c.pair)).toEqual(["cc", "bb", "aa"]);
+  });
+});
+
+describe("projectRecovery + targetsToWeakKeys", () => {
+  it("anchors the projection at the rolling-30d accuracy the queue shows", () => {
+    // Daily series ending at 100% on the last day while the rolling-30d
+    // window sits at 84% — the projection must start from the override
+    // (the queue card's number), not from the last single day.
+    const rows = Array.from({ length: 10 }, (_, i) =>
+      day(9 - i, 50, Math.min(50, 41 + i)),
+    );
+    const plain = projectRecovery(rows);
+    expect(plain.current).toBeCloseTo(100, 6); // last day (the old bug)
+
+    const anchored = projectRecovery(rows, 84);
+    expect(anchored.current).toBe(84);
+    expect(anchored.projected).toBeCloseTo(Math.min(100, 84 + anchored.slopePerDay * 7), 6);
+    expect(anchored.etaDays).not.toBeNull(); // 84 < 95 and improving
+  });
+
+  it("targetsToWeakKeys maps queue targets sorted worst-accuracy-first", () => {
+    const analysis = {
+      targets: [
+        { key: ":", shiftRequired: true, accuracy: 81, presses: 90, misses: 17, state: "maintenance" as const, priority: null, stateSince: "2026-08-20" },
+        { key: "{", shiftRequired: false, accuracy: 78, presses: 100, misses: 22, state: "targeted" as const, priority: 1, stateSince: "2026-09-01" },
+        { key: "]", shiftRequired: false, accuracy: 88, presses: 80, misses: 10, state: "targeted" as const, priority: 2, stateSince: "2026-09-01" },
+      ],
+      combos: [],
+      patterns: [],
+      slowest: [],
+      empty: false,
+    };
+    const keys = targetsToWeakKeys(analysis);
+    // Dashboard radar order: worst accuracy first regardless of queue state.
+    expect(keys.map((k) => k.key)).toEqual(["{", ":", "]"]);
+    expect(keys[0]).toMatchObject({
+      key: "{",
+      shiftRequired: false,
+      accuracy: 78,
+      presses: 100,
+      misses: 22,
+    });
   });
 });

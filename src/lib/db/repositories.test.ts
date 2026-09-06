@@ -265,3 +265,37 @@ describe("lesson_progress FK", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("statsRepo.improvementBuckets (§12 regression)", () => {
+  it("buckets multi-attempt lessons — GROUP BY must not rely on SELECT aliases", async () => {
+    // Regression: the Phase 5 query grouped by SELECT aliases ("bucket",
+    // "bucketOrder"), which SQLite rejects for this query shape — the
+    // Statistics improvement chart silently showed "NO DATA" forever.
+    const { attemptsRepo, statsRepo, lessonsRepo } = await import("./repositories");
+    const { getLesson } = await import("../../content");
+    await lessonsRepo.upsert(getLesson("l3-019")!);
+    for (let i = 0; i < 5; i++) {
+      await attemptsRepo.insertWithNextNumber({
+        lessonId: "l3-019",
+        wpm: 40 + i * 5,
+        accuracy: 96,
+        errorRate: 4,
+        errorCount: 2,
+        correctChars: 100,
+        incorrectChars: 2,
+        backspaceCount: 1,
+        durationMs: 50_000,
+        completed: true,
+        startedAt: 1_000_000 + i * 60_000,
+        finishedAt: 1_050_000 + i * 60_000,
+      });
+    }
+    const buckets = await statsRepo.improvementBuckets();
+    expect(buckets.map((b) => b.bucket)).toEqual(["1", "2", "3", "4", "5+"]);
+    expect(buckets[0].attempts).toBe(1);
+    expect(buckets[0].avgWpm).toBeCloseTo(40, 6);
+    expect(buckets[4].avgWpm).toBeCloseTo(60, 6);
+    // Improvement across attempts is visible (60 > 40 WPM).
+    expect(buckets[4].avgWpm).toBeGreaterThan(buckets[0].avgWpm);
+  });
+});

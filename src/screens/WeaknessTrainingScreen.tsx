@@ -299,6 +299,8 @@ function DrillBuffer({
             const entry = engineState.entries[globalIndex];
             if (entry === undefined) return null;
             const isCurrent = running && globalIndex === engineState.position;
+            // §15: focus targets are error-tinted BEFORE they are typed so
+            // the operator sees what the drill is training.
             const isFocus = focus.has(expected) && expected !== " ";
             const cls =
               entry.status === "correct"
@@ -306,7 +308,7 @@ function DrillBuffer({
                 : entry.status === "incorrect"
                   ? "rounded bg-error-container/30 px-0.5 text-error"
                   : isFocus
-                    ? "font-bold text-error"
+                    ? "rounded bg-error-container/30 px-0.5 font-bold text-error"
                     : expected === ":" || expected === "{" || expected === "}" || expected === "[" || expected === "]"
                       ? "font-bold text-primary"
                       : "text-on-surface-variant";
@@ -399,7 +401,10 @@ function RecoveryCurves({ analysis }: { analysis: WeaknessAnalysis | null }) {
             presses: r.presses,
             correct: r.correct,
           }));
-          projections[key] = projectRecovery(rows);
+          // Anchor at the SAME rolling-30d accuracy the queue card shows —
+          // not the last single day (which contradicted the queue card).
+          const override = analysis.targets.find((t) => t.key === key)?.accuracy;
+          projections[key] = projectRecovery(rows, override);
         }
         if (!cancelled) setSeries({ keys, rows: [...byDay.values()], projections });
       } catch {

@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { LessonSchema, type DrillConfig } from "../schemas";
-import { generateDrillSet, generateDrillSets, hashSeed, mulberry32 } from "./adaptiveGenerator";
+import {
+  CORPUS_WORDS,
+  DISTRACTOR_SYMBOLS,
+  TEMPLATE_WORDS,
+  generateDrillSet,
+  generateDrillSets,
+  hashSeed,
+  mulberry32,
+} from "./adaptiveGenerator";
 import type { WeaknessAnalysis } from "./analyzer";
 
 /**
@@ -76,34 +84,88 @@ describe("generateDrillSet", () => {
     }
   });
 
-  it("over-samples weak chars at ~ the configured weight (×3)", () => {
-    // Generate a large body of content and count occurrences: each weak
-    // char should appear ~3x as often as any single filler char (filler
-    // alphabet = 27 chars; weak weight = 3 each).
-    const contents: string[] = [];
-    for (let seed = 0; seed < 40; seed++) {
-      contents.push(generateDrillSet(input({ seed, setIndex: 1 })).lesson.content);
-    }
-    const text = contents.join("");
-    const count = (char: string) => text.split(char).length - 1;
+  it("over-samples weak chars at ~ the configured weight (×3 vs distractors)", () => {
+    // Focus chars chosen to be absent from template literals and the
+    // distractor set, so counts measure only {S}/{B} slot output.
+    const focus = ["{", "%", "#", "!"];
+    const analysis = fakeAnalysis();
+    analysis.targets = focus.map((key, i) => ({
+      key,
+      shiftRequired: i % 2 === 1,
+      accuracy: 78 + i,
+      presses: 100,
+      misses: 22,
+      state: "targeted" as const,
+      priority: i + 1,
+      stateSince: "2026-09-01",
+    }));
+    const ratioFor = (weight: number) => {
+      let text = "";
+      for (let seed = 0; seed < 40; seed++) {
+        text += generateDrillSet(
+          input({ analysis, seed, setIndex: 1, config: { ...CONFIG, symbolWeight: weight } }),
+        ).lesson.content;
+      }
+      const count = (char: string) => text.split(char).length - 1;
+      const focusMean = focus.reduce((sum, c) => sum + count(c), 0) / focus.length;
+      const distractorMean =
+        DISTRACTOR_SYMBOLS.reduce((sum, s) => sum + count(s), 0) /
+        DISTRACTOR_SYMBOLS.length;
+      return focusMean / distractorMean;
+    };
 
-    // Weak chars get weight 3 both in {I} interiors and (weight+2) in {W}
-    // slots; the aggregate ratio must sit clearly above 1x and near 3x.
-    const weakAvg = (count("{") + count(":") + count("]")) / 3;
-    const fillerAvg =
-      (count("a") + count("e") + count("o") + count("r") + count("s")) / 5;
-    const ratio = weakAvg / fillerAvg;
-    expect(ratio).toBeGreaterThan(1.8);
-    expect(ratio).toBeLessThan(4.6);
+    const ratio3 = ratioFor(3);
+    // ×3 weight + the coverage fallback push the ratio modestly above 3.
+    expect(ratio3).toBeGreaterThan(2.8);
+    expect(ratio3).toBeLessThan(5.5);
+    // Lower weight must collapse toward 1 — monotonic in the config.
+    const ratio1 = ratioFor(1);
+    expect(ratio1).toBeLessThan(ratio3);
+    expect(ratio1).toBeGreaterThan(1);
+  });
+
+  it("guarantees every line trains at least one focus symbol", () => {
+    for (let seed = 0; seed < 30; seed++) {
+      const { lesson, weakChars } = generateDrillSet(input({ seed }));
+      expect(weakChars.length).toBeGreaterThan(0);
+      for (const line of lesson.content.split("\n")) {
+        if (line.length === 0) continue; // bare trailing newline (set edge)
+        const hasFocus = weakChars.some((c) => line.includes(c));
+        expect(hasFocus, `line without focus symbol: ${JSON.stringify(line)}`).toBe(true);
+      }
+    }
+  });
+
+  it("composes contexts from real corpus identifiers (no letter soup)", () => {
+    const words = new Set<string>([...CORPUS_WORDS, ...TEMPLATE_WORDS]);
+    // A trim at a line boundary may sever a word mid-run; a letter run is
+    // acceptable when it is a corpus word or a PREFIX of one — random
+    // letter soup is neither.
+    const allowed = (run: string) =>
+      words.has(run) ||
+      CORPUS_WORDS.some((w) => w.startsWith(run)) ||
+      TEMPLATE_WORDS.some((w) => w.startsWith(run));
+    for (let seed = 0; seed < 30; seed++) {
+      const { lesson } = generateDrillSet(input({ seed }));
+      const runs = lesson.content.match(/[a-z]{2,}/g) ?? [];
+      for (const run of runs) {
+        expect(
+          allowed(run),
+          `non-corpus letter run "${run}" in seed ${seed}`,
+        ).toBe(true);
+      }
+    }
   });
 
   it("embeds a weak bigram from the analyzer in context", () => {
-    const { lesson } = generateDrillSet(input({ seed: 7 }));
-    // "->" is the worst combo and contains no weak char here, so the
-    // generator glues weak chars instead — assert SOME known bigram form
-    // appears: the combo or a weak+weak/weak+_ glue.
+    // The bigram slot is probabilistic per set; across seeds it must appear.
     const candidates = ["->", "::", "{:", ":]", "]{", "{]", "}_", "{_"];
-    expect(candidates.some((pair) => lesson.content.includes(pair))).toBe(true);
+    let seen = false;
+    for (let seed = 0; seed < 12 && !seen; seed++) {
+      const { lesson } = generateDrillSet(input({ seed }));
+      seen = candidates.some((pair) => lesson.content.includes(pair));
+    }
+    expect(seen).toBe(true);
   });
 
   it("titles the drill from target families", () => {
