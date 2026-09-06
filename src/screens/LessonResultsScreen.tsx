@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { getLesson, nextLessonInOrder } from "../content";
-import { attemptsRepo } from "../lib/db/repositories";
+import { attemptsRepo, customLessonsRepo } from "../lib/db/repositories";
 import {
   ACCURACY_GATE,
   WPM_GATE,
   evaluateAttempt,
+  evaluatePersonal,
   gradeFor,
   type Grade,
 } from "../lib/curriculum/rules";
 import type { AttemptRow } from "../lib/schemas";
 import type { AttemptReportRow } from "../lib/schemas";
+import type { CustomLesson } from "../lib/schemas";
+import { customIdFromRef, toCurriculumLesson } from "../lib/customLessons/domain";
 import { cn } from "../lib/cn";
 import { useCurriculumStore } from "../stores/useCurriculumStore";
 import { useSessionStore } from "../stores/useSessionStore";
@@ -77,6 +80,8 @@ export default function LessonResultsScreen() {
   const [dbAttempt, setDbAttempt] = useState<AttemptReportRow | null>(null);
   const [history, setHistory] = useState<AttemptRow[]>([]);
   const [dbTried, setDbTried] = useState(false);
+  /** §16: the custom module behind a `custom-<uuid>` attempt (null else). */
+  const [customModule, setCustomModule] = useState<CustomLesson | null>(null);
 
   // Resolve attempt data: DB row first, in-memory session summary as the
   // degraded fallback (plain-browser preview / failed persistence).
@@ -112,6 +117,26 @@ export default function LessonResultsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params?.attemptId]);
 
+  // Load the custom module behind a `custom-<uuid>` attempt (§16).
+  useEffect(() => {
+    const lessonId = dbAttempt?.lessonId ?? summary?.lessonId ?? null;
+    const customId = lessonId !== null ? customIdFromRef(lessonId) : null;
+    if (customId === null) {
+      setCustomModule(null);
+      return;
+    }
+    let cancelled = false;
+    void customLessonsRepo
+      .get(customId)
+      .then((row) => {
+        if (!cancelled) setCustomModule(row);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [dbAttempt, summary]);
+
   const data: ResultsData | null = useMemo(() => {
     if (dbAttempt) {
       return {
@@ -146,12 +171,41 @@ export default function LessonResultsScreen() {
     return null;
   }, [dbAttempt, summary]);
 
-  const lesson = data ? (getLesson(data.lessonId) ?? sessionLesson) : sessionLesson;
+  const lesson = data
+    ? data.lessonId.startsWith("custom-") && customModule !== null
+      ? toCurriculumLesson(customModule)
+      : (getLesson(data.lessonId) ?? sessionLesson)
+    : sessionLesson;
+
+  const isCustom = (data?.lessonId.startsWith("custom-") ?? false) || lesson?.source === "custom";
+
+  // §16 optional personal targets — display-only (never a lock).
+  const personal = isCustom
+    ? {
+        wpm: customModule?.wpmTarget ?? null,
+        accuracy: customModule?.accuracyTarget ?? null,
+      }
+    : null;
 
   const verdict = useMemo(() => {
     if (outcome) return outcome;
     if (data) {
       const input = { completed: true, accuracy: data.accuracy, wpm: data.wpm };
+      if (isCustom) {
+        // Custom modules: verdict against personal targets, never the §8
+        // gate; null when the module defines no targets at all.
+        const personalVerdict = evaluatePersonal(
+          input,
+          customModule?.wpmTarget ?? null,
+          customModule?.accuracyTarget ?? null,
+        );
+        return {
+          attempt: null,
+          verdict: personalVerdict,
+          grade: gradeFor(input),
+          nextLessonId: null,
+        };
+      }
       return {
         attempt: null,
         verdict: evaluateAttempt(input),
@@ -162,13 +216,24 @@ export default function LessonResultsScreen() {
       };
     }
     return null;
-  }, [outcome, data]);
+  }, [outcome, data, isCustom, customModule]);
 
-  // Actions: Esc -> Lessons, Ctrl+R -> Retry, Enter -> Next (pass only).
-  const navigateLessons = () => useUiStore.getState().navigate("lessons");
+  // Actions: Esc -> module list, Ctrl+R -> Retry, Enter -> Next (pass only).
+  const navigateLessons = () =>
+    useUiStore.getState().navigate(isCustom ? "custom-lessons" : "lessons");
   const retryLesson = () => {
     const id = lesson?.id;
-    if (id) useCurriculumStore.getState().startLesson(id);
+    if (id === undefined) return;
+    // Custom modules are not in the bundled curriculum — navigate directly;
+    // the session screen resolves the `custom-<uuid>` ref from the DB.
+    if (isCustom) {
+      useSessionStore.getState().reset();
+      useUiStore.getState().navigate("typing-session", {
+        "typing-session": { lessonId: id },
+      });
+    } else {
+      useCurriculumStore.getState().startLesson(id);
+    }
   };
   const nextLesson = () => {
     const id = verdict?.nextLessonId ?? null;
@@ -225,14 +290,22 @@ export default function LessonResultsScreen() {
   const passed = verdict?.verdict === "PASS";
   const grade = verdict?.grade ?? "F";
   const nextLessonInfo = verdict?.nextLessonId ? getLesson(verdict.nextLessonId) : null;
-  const moduleNo = lesson
-    ? `${lesson.level}.${String(lesson.orderIndex + 1).padStart(2, "0")}`
-    : data.lessonId;
+  const moduleNo = isCustom
+    ? "CUSTOM"
+    : lesson
+      ? `${lesson.level}.${String(lesson.orderIndex + 1).padStart(2, "0")}`
+      : data.lessonId;
+  // §16: the threshold line shows the module's OPTIONAL personal targets;
+  // null = dimension not evaluated (the §8 gate never applies here).
+  const wpmTarget = personal !== null ? personal.wpm : WPM_GATE;
+  const accTarget = personal !== null ? personal.accuracy : ACCURACY_GATE;
   const expectedMs = lesson
-    ? (lesson.content.replace(/\n/g, "").length / (WPM_GATE * 5)) * 60_000
+    ? (lesson.content.replace(/\n/g, "").length /
+        ((wpmTarget ?? 30) * 5)) *
+      60_000
     : data.durationMs;
-  const wpmDelta = data.wpm - WPM_GATE;
-  const accDelta = data.accuracy - ACCURACY_GATE;
+  const wpmDelta = wpmTarget === null ? null : data.wpm - wpmTarget;
+  const accDelta = accTarget === null ? null : data.accuracy - accTarget;
 
   return (
     <main className="flex w-full flex-1 flex-col items-center overflow-y-auto bg-surface p-6 md:p-10">
@@ -241,7 +314,9 @@ export default function LessonResultsScreen() {
         <div className="mb-6 flex w-full items-center justify-between px-1 font-code-sm text-code-sm text-on-surface-variant">
           <div className="flex items-center gap-2">
             <span className="rounded border border-primary-container/30 bg-primary-container/10 px-2 py-0.5 font-code-sm text-[11px] font-semibold uppercase tracking-wide text-primary">
-              Track {String(lesson?.level ?? 0).padStart(2, "0")} • Module {moduleNo}
+              {isCustom
+                ? "Custom Module"
+                : `Track ${String(lesson?.level ?? 0).padStart(2, "0")} • Module ${moduleNo}`}
             </span>
             <span className="text-outline-variant">/</span>
             <span className="font-medium text-on-surface">{lesson?.title ?? data.lessonId}</span>
@@ -258,7 +333,7 @@ export default function LessonResultsScreen() {
               <span className="material-symbols-outlined text-[14px]">
                 {passed ? "check_circle" : "cancel"}
               </span>
-              {passed ? "Requirement Satisfied" : "Requirement Not Met"}
+              {passed ? (isCustom ? "Personal target met" : "Requirement Satisfied") : isCustom ? "Target not met" : "Requirement Not Met"}
             </span>
           </div>
         </div>
@@ -290,7 +365,11 @@ export default function LessonResultsScreen() {
                       passed ? "text-on-surface" : "text-error",
                     )}
                   >
-                    {passed ? "Lesson Passed" : "Lesson Failed"}
+                    {isCustom
+                      ? "Module Complete"
+                      : passed
+                        ? "Lesson Passed"
+                        : "Lesson Failed"}
                   </h1>
                   <span
                     className={cn(
@@ -306,22 +385,34 @@ export default function LessonResultsScreen() {
                     {passed ? "lock_open" : "lock"}
                   </span>
                   <span>
-                    {passed && nextLessonInfo
-                      ? "Next unlocked: "
-                      : passed
-                        ? "Final module cleared — nothing left to unlock"
-                        : "Repeat this module to unlock the next one. "}
-                    {passed && nextLessonInfo && (
-                      <span className="font-code-sm font-semibold text-on-surface">
-                        Module {nextLessonInfo.level}.
-                        {String(nextLessonInfo.orderIndex + 1).padStart(2, "0")} •{" "}
-                        {nextLessonInfo.title}
-                      </span>
-                    )}
-                    {!passed && (
-                      <span className="font-code-sm text-on-surface-variant">
-                        Needs acc &gt;= {ACCURACY_GATE}% AND wpm &gt; {WPM_GATE} in the same attempt
-                      </span>
+                    {isCustom ? (
+                      customModule !== null &&
+                      customModule.wpmTarget === null &&
+                      customModule.accuracyTarget === null ? (
+                        "No personal targets on this module — practice freely (never gated, §16)."
+                      ) : (
+                        "Personal targets are display-only — they never gate or unlock anything."
+                      )
+                    ) : (
+                      <>
+                        {passed && nextLessonInfo
+                          ? "Next unlocked: "
+                          : passed
+                            ? "Final module cleared — nothing left to unlock"
+                            : "Repeat this module to unlock the next one. "}
+                        {passed && nextLessonInfo && (
+                          <span className="font-code-sm font-semibold text-on-surface">
+                            Module {nextLessonInfo.level}.
+                            {String(nextLessonInfo.orderIndex + 1).padStart(2, "0")} •{" "}
+                            {nextLessonInfo.title}
+                          </span>
+                        )}
+                        {!passed && (
+                          <span className="font-code-sm text-on-surface-variant">
+                            Needs acc &gt;= {ACCURACY_GATE}% AND wpm &gt; {WPM_GATE} in the same attempt
+                          </span>
+                        )}
+                      </>
                     )}
                   </span>
                 </p>
@@ -340,10 +431,12 @@ export default function LessonResultsScreen() {
               </div>
               <div className="rounded-xl border border-surface-container-highest/60 bg-surface-container-low px-4 py-2 text-right">
                 <span className="block font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
-                  Target Threshold
+                  {isCustom ? "Personal Target" : "Target Threshold"}
                 </span>
                 <span className="font-code-sm text-code-sm font-semibold text-on-surface">
-                  &gt; {WPM_GATE} WPM / {ACCURACY_GATE}%
+                  {wpmTarget === null && accTarget === null
+                    ? "no target"
+                    : `> ${wpmTarget ?? "—"} WPM / ${accTarget === null ? "—" : `${accTarget}%`}`}
                 </span>
               </div>
             </div>
@@ -364,15 +457,16 @@ export default function LessonResultsScreen() {
               <div
                 className={cn(
                   "mt-2.5 flex items-center gap-1.5 font-code-sm text-code-sm",
-                  wpmDelta > 0 ? "text-primary" : "text-error",
+                  (wpmDelta ?? 0) > 0 ? "text-primary" : "text-error",
                 )}
               >
                 <span className="material-symbols-outlined text-[14px]">
-                  {wpmDelta > 0 ? "trending_up" : "trending_down"}
+                  {(wpmDelta ?? 0) > 0 ? "trending_up" : "trending_down"}
                 </span>
                 <span>
-                  {wpmDelta > 0 ? "+" : ""}
-                  {fmt1(wpmDelta)} vs gate (&gt; {WPM_GATE})
+                  {wpmDelta === null
+                    ? "no WPM target on this module"
+                    : `${wpmDelta > 0 ? "+" : ""}${fmt1(wpmDelta)} vs target (> ${wpmTarget})`}
                 </span>
               </div>
             </div>
@@ -402,15 +496,16 @@ export default function LessonResultsScreen() {
               <div
                 className={cn(
                   "mt-2.5 flex items-center gap-1.5 font-code-sm text-code-sm",
-                  accDelta >= 0 ? "text-secondary" : "text-error",
+                  (accDelta ?? 0) >= 0 ? "text-secondary" : "text-error",
                 )}
               >
                 <span className="material-symbols-outlined text-[14px]">
-                  {accDelta >= 0 ? "check_circle" : "error"}
+                  {(accDelta ?? 0) >= 0 ? "check_circle" : "error"}
                 </span>
                 <span>
-                  {accDelta >= 0 ? "+" : ""}
-                  {fmt1(accDelta)}% vs threshold ({ACCURACY_GATE}%)
+                  {accDelta === null
+                    ? "no accuracy target on this module"
+                    : `${accDelta >= 0 ? "+" : ""}${fmt1(accDelta)}% vs target (${accTarget}%)`}
                 </span>
               </div>
             </div>
@@ -425,7 +520,9 @@ export default function LessonResultsScreen() {
                 </span>
               </div>
               <div className="mt-2.5 font-code-sm text-code-sm text-on-surface-variant">
-                <span>Expected at gate speed: ~{fmtClock(expectedMs)}</span>
+                <span>
+                  Expected at {wpmTarget === null ? "30" : wpmTarget} WPM: ~{fmtClock(expectedMs)}
+                </span>
               </div>
             </div>
 

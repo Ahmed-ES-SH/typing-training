@@ -1,7 +1,12 @@
 import { create } from "zustand";
 
 import { attemptsRepo, bigramStatsRepo, keyStatsRepo, lessonsRepo, sessionsRepo } from "../lib/db/repositories";
-import { buildKeyReport, completeAttempt, type AttemptOutcome } from "../lib/curriculum/progressService";
+import {
+  buildKeyReport,
+  completeAttempt,
+  completeCustomAttempt,
+  type AttemptOutcome,
+} from "../lib/curriculum/progressService";
 import { localDayKey } from "../lib/stats/dailyService";
 import { applyEvent, createSession, isFinished } from "../lib/engine/engine";
 import { liveMetrics } from "../lib/engine/metrics";
@@ -17,6 +22,7 @@ import {
   type FocusKeyStats,
 } from "../lib/intelligence/drillService";
 import { useUiStore } from "./useUiStore";
+import { useSettingsStore } from "./useSettingsStore";
 import { notifyStatsChanged } from "./useStatsStore";
 
 /**
@@ -244,7 +250,12 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     /* --------------------- lesson persistence branch ------------------ */
     try {
       if (get().persistStage === "none") {
-        const outcome = await completeAttempt(lesson, attemptMetrics, keyReport);
+        // §16: custom modules complete OUTSIDE the progress/unlock chain —
+        // completeCustomAttempt only appends a kind='custom' ledger row.
+        const outcome =
+          lesson.source === "custom"
+            ? await completeCustomAttempt(lesson, attemptMetrics, keyReport)
+            : await completeAttempt(lesson, attemptMetrics, keyReport);
         const summary = SessionSummarySchema.parse({
           lessonId: lesson.id,
           attemptNumber: outcome.attempt.attemptNumber,
@@ -305,7 +316,10 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     const { phase, engineState } = get();
     if (phase !== "running" || engineState === null) return;
 
-    const next = applyEvent(engineState, event, Date.now());
+    // §20 backspace policy feeds the engine's counting mode (Phase 7).
+    const next = applyEvent(engineState, event, Date.now(), {
+      backspacePolicy: useSettingsStore.getState().settings.backspacePolicy,
+    });
     set({ engineState: next });
 
     if (isFinished(next)) void persistFinishedSession();
@@ -395,12 +409,14 @@ export const useSessionStore = create<SessionStore>((set, get) => {
 
       try {
         // The curriculum seed normally covers this; the upsert is a cheap
-        // safety net so FK targets always exist.
+        // safety net so FK targets always exist (it is the ONLY lessons row
+        // for custom modules — the seed never writes them).
         await lessonsRepo.upsert(lesson);
         const trainingSessionId = crypto.randomUUID();
         await sessionsRepo.open({
           id: trainingSessionId,
-          kind: "lesson",
+          // §16: custom modules get their own session kind.
+          kind: lesson.source === "custom" ? "custom" : "lesson",
           lessonId: lesson.id,
           startedAt: Date.now(),
           endedAt: null,

@@ -60,6 +60,7 @@ export function applyEvent(
   options: SessionOptions = {},
 ): SessionState {
   const requiresShift = options.requiresShift ?? defaultRequiresShift;
+  const backspacePolicy = options.backspacePolicy ?? "counted";
 
   // A finished session is immutable — no events apply anymore.
   if (state.finishedAt !== null) return state;
@@ -67,6 +68,9 @@ export function applyEvent(
   if (event.type === "backspace") {
     // Backspace on an untouched buffer is a no-op (nothing to fix up).
     if (state.position === 0) return state;
+    // §20 policy, wired at the engine level: forbidden = the buffer can only
+    // move forward; free = the fix-up happens but is never counted.
+    if (backspacePolicy === "forbidden") return state;
     const position = state.position - 1;
     const entries = state.entries.slice();
     entries[position] = {
@@ -78,7 +82,8 @@ export function applyEvent(
       ...state,
       position,
       entries,
-      backspaceCount: state.backspaceCount + 1,
+      backspaceCount:
+        backspacePolicy === "free" ? state.backspaceCount : state.backspaceCount + 1,
     };
   }
 

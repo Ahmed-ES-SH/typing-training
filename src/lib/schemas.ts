@@ -67,7 +67,14 @@ export type LessonProgress = z.infer<typeof LessonProgressSchema>;
  * row. Drill metrics never touch lesson_progress (plan §2).
  * ------------------------------------------------------------------------- */
 
-export const AttemptKindSchema = z.enum(["lesson", "weakness", "adaptive"]);
+/**
+ * Attempt kinds (Phase 7 adds `custom`): lesson = curriculum modules,
+ * weakness/adaptive = Phase 6 drills (lesson_id NULL), custom = user-authored
+ * modules (§16). Custom attempts never touch `lesson_progress` — custom
+ * lessons live OUTSIDE the §7/§8 unlock chain; their PB markers are read
+ * straight from this ledger.
+ */
+export const AttemptKindSchema = z.enum(["lesson", "weakness", "adaptive", "custom"]);
 export type AttemptKind = z.infer<typeof AttemptKindSchema>;
 
 /** Metric columns shared by every attempt kind (§10 — append-only). */
@@ -267,6 +274,10 @@ export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 
 export const CustomLessonDifficultySchema = z.enum(["easy", "medium", "hard"]);
 
+/** Where a custom module came from (Phase 7 §17): authored here or imported
+ * from a `custom-lessons` / `collection` envelope. */
+export const CustomLessonOriginSchema = z.enum(["custom", "imported"]);
+
 export const CustomLessonSchema = z.object({
   id: z.string().uuid(),
   title: z.string().min(1),
@@ -276,10 +287,21 @@ export const CustomLessonSchema = z.object({
     .min(1)
     .refine((c) => !c.includes("\t"), { message: "tabs are not supported" }),
   difficulty: CustomLessonDifficultySchema,
+  /** Characters this module trains (auto-detected via the keymap, editable). */
   targetKeys: z.array(z.string().min(1)).default([]),
   targetSymbols: z.array(z.string().min(1)).default([]),
+  /** Optional §16 targets — display-only (Results threshold + card badges),
+   * never a lock. 0/null = no target. */
   wpmTarget: z.number().min(0).nullable(),
   accuracyTarget: z.number().min(0).max(100).nullable(),
+  /** Drafts are excluded from practice counts until published. */
+  isDraft: z.boolean().default(false),
+  source: CustomLessonOriginSchema.default("custom"),
+  /** Import envelope id grouping imported collections (null for authored). */
+  collectionId: z.string().min(1).nullable(),
+  /** Free-text family label from the form select (e.g. "TypeScript"). */
+  syntaxFamily: z.string().default(""),
+  tags: z.array(z.string()).default([]),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });

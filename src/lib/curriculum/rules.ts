@@ -32,6 +32,23 @@ export function evaluateAttempt(input: AttemptGateInput): AttemptVerdict {
 }
 
 /**
+ * §16 optional personal targets of a CUSTOM module — display-only (plan §2:
+ * they color the Results threshold line and card badges, never a lock, and
+ * they never touch the §8 curriculum gate). null target = that dimension is
+ * not evaluated; both null = no personal verdict at all.
+ */
+export function evaluatePersonal(
+  input: AttemptGateInput,
+  wpmTarget: number | null,
+  accuracyTarget: number | null,
+): AttemptVerdict | null {
+  if (wpmTarget === null && accuracyTarget === null) return null;
+  const wpmOk = wpmTarget === null || input.wpm > wpmTarget;
+  const accOk = accuracyTarget === null || input.accuracy >= accuracyTarget;
+  return input.completed && wpmOk && accOk ? "PASS" : "FAIL";
+}
+
+/**
  * Presentational grade scale (Phase 4 plan §2). Grades never influence
  * unlocking — a C pass unlocks exactly like an S pass.
  */

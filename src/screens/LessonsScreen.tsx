@@ -8,6 +8,7 @@ import {
 import { attemptsRepo, keyStatsRepo } from "../lib/db/repositories";
 import type { KeyStatRow, Lesson, LessonProgress } from "../lib/schemas";
 import { cn } from "../lib/cn";
+import { useSettingsStore } from "../stores/useSettingsStore";
 import { lessonStatus, useCurriculumStore } from "../stores/useCurriculumStore";
 
 /**
@@ -110,7 +111,7 @@ function MasteryGauge({
         </span>
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-container-lowest">
           <div
-            className="h-full rounded-full bg-primary-container shadow-[0_0_8px_rgba(249,115,22,0.8)]"
+            className="h-full rounded-full bg-primary-container shadow-[0_0_8px_rgb(249_115_22_calc(0.8_*_var(--accent-alpha)))]"
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -346,7 +347,7 @@ function ModuleCard({
           className={cn(
             "flex w-full items-center justify-center gap-space-xs rounded-lg py-2 font-label-md text-label-md transition-all",
             status === "active"
-              ? "bg-primary-container py-2.5 font-bold text-on-primary-container shadow-[0_0_16px_rgba(249,115,22,0.4)] hover:bg-tertiary-container"
+              ? "bg-primary-container py-2.5 font-bold text-on-primary-container shadow-[0_0_16px_rgb(249_115_22_calc(0.4_*_var(--accent-alpha)))] hover:bg-tertiary-container"
               : "bg-surface-container-high text-on-surface hover:bg-primary-container hover:text-on-primary-container",
           )}
         >
@@ -392,7 +393,7 @@ function ModuleCard({
       className={cn(
         "relative flex flex-col justify-between rounded-lg p-space-base transition-all",
         activeHighlight
-          ? "overflow-hidden bg-surface-container shadow-2xl shadow-[0_0_24px_rgba(249,115,22,0.25)]"
+          ? "overflow-hidden bg-surface-container shadow-2xl shadow-[0_0_24px_rgb(249_115_22_calc(0.25_*_var(--accent-alpha)))]"
           : status === "locked"
             ? "bg-surface-container-lowest/60 opacity-75 backdrop-blur-sm"
             : "group bg-surface-container-lowest shadow-sm hover:bg-surface-container",
@@ -755,6 +756,8 @@ export default function LessonsScreen() {
     return tally;
   }, [progress]);
 
+  const showTelemetryStrip = useSettingsStore((s) => s.settings.showTelemetryStrip);
+
   // Rolling stats + key telemetry, best-effort (hidden when DB unavailable).
   useEffect(() => {
     if (!loaded) return;
@@ -971,7 +974,7 @@ export default function LessonsScreen() {
           )}
         </div>
 
-        <SymbolTelemetry keys={keyStats} />
+        {showTelemetryStrip && <SymbolTelemetry keys={keyStats} />}
       </div>
     </main>
   );

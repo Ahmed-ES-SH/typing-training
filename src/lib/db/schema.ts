@@ -71,7 +71,7 @@ export const lessonAttempts = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     lessonId: text("lesson_id").references(() => lessons.id),
-    kind: text("kind", { enum: ["lesson", "weakness", "adaptive"] })
+    kind: text("kind", { enum: ["lesson", "weakness", "adaptive", "custom"] })
       .notNull()
       .default("lesson"),
     attemptNumber: integer("attempt_number").notNull(),
@@ -159,7 +159,9 @@ export const trainingSessions = sqliteTable("training_sessions", {
   charsTyped: integer("chars_typed").notNull().default(0),
 });
 
-/* §16 custom lessons — complete field set now so Phase 7 is pure UI. */
+/* §16 custom lessons — Phase 7 adds the draft lifecycle, the §17 import
+ * provenance (source + collection grouping), the form's syntax-family label
+ * and free-text tags (search). */
 export const customLessons = sqliteTable("custom_lessons", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
@@ -176,6 +178,15 @@ export const customLessons = sqliteTable("custom_lessons", {
     .default(sql`'[]'`),
   wpmTarget: real("wpm_target"),
   accuracyTarget: real("accuracy_target"),
+  isDraft: integer("is_draft", { mode: "boolean" }).notNull().default(false),
+  source: text("source", { enum: ["custom", "imported"] })
+    .notNull()
+    .default("custom"),
+  collectionId: text("collection_id"),
+  syntaxFamily: text("syntax_family").notNull().default(""),
+  tags: text("tags", { mode: "json" })
+    .notNull()
+    .default(sql`'[]'`),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

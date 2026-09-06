@@ -322,7 +322,7 @@ export default function DashboardScreen() {
         <div className="flex flex-col gap-space-md xl:col-span-2">
           {/* Active module card */}
           <section className="relative flex flex-col overflow-hidden rounded-xl border border-primary-container/50 bg-surface-container-low shadow-2xl">
-            <div className="absolute bottom-0 left-0 top-0 w-1.5 bg-primary-container shadow-[0_0_12px_rgba(249,115,22,0.9)]" />
+            <div className="absolute bottom-0 left-0 top-0 w-1.5 bg-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(0.9_*_var(--accent-alpha)))]" />
             {currentLesson ? (
               <div className="flex flex-col gap-space-md p-space-lg pl-space-xl">
                 <div className="flex flex-wrap items-start justify-between gap-space-md">

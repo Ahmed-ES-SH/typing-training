@@ -310,3 +310,158 @@
     background: #584237;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Phase 7 — theme variants, accent intensity, reduce motion (§20)
+ *
+ * Tokens are CSS vars (see @theme above), so each design theme is a scoped
+ * variable override applied on <html> by the settings store. `--accent-alpha`
+ * scales the accent glow shadows (1.0 = the design's 70% default).
+ * ------------------------------------------------------------------------- */
+
+:root {
+  --accent-alpha: 1;
+}
+
+/* Terminal Mono — monochrome surfaces, phosphor-green accent. */
+html.theme-terminal-mono {
+  --color-background: #0b0d0c;
+  --color-surface: #0b0d0c;
+  --color-surface-dim: #0b0d0c;
+  --color-surface-bright: #2a302d;
+  --color-surface-container-lowest: #070908;
+  --color-surface-container-low: #121514;
+  --color-surface-container: #171b19;
+  --color-surface-container-high: #1f2422;
+  --color-surface-container-highest: #2a302d;
+  --color-surface-variant: #2a302d;
+  --color-surface-tint: #7ee787;
+  --color-on-surface: #c9d1c9;
+  --color-on-background: #c9d1c9;
+  --color-on-surface-variant: #93a097;
+  --color-inverse-surface: #c9d1c9;
+  --color-inverse-on-surface: #0b0d0c;
+  --color-inverse-primary: #29823a;
+
+  --color-primary: #7ee787;
+  --color-primary-container: #146c2e;
+  --color-on-primary: #04180a;
+  --color-on-primary-container: #d7ffd9;
+  --color-primary-fixed: #d7ffd9;
+  --color-primary-fixed-dim: #7ee787;
+  --color-on-primary-fixed: #04180a;
+  --color-on-primary-fixed-variant: #0a3d18;
+
+  --color-secondary: #9ae6b4;
+  --color-secondary-container: #1d4f2c;
+  --color-on-secondary: #0a1f10;
+  --color-on-secondary-container: #d3f8dd;
+  --color-secondary-fixed: #d3f8dd;
+  --color-secondary-fixed-dim: #9ae6b4;
+  --color-on-secondary-fixed: #0a1f10;
+  --color-on-secondary-fixed-variant: #163a22;
+
+  --color-tertiary: #96d982;
+  --color-tertiary-container: #2c611c;
+  --color-on-tertiary: #0c1f05;
+  --color-on-tertiary-container: #dcf7c9;
+  --color-tertiary-fixed: #dcf7c9;
+  --color-tertiary-fixed-dim: #96d982;
+  --color-on-tertiary-fixed: #0c1f05;
+  --color-on-tertiary-fixed-variant: #22481a;
+
+  --color-error: #ff7b72;
+  --color-error-container: #5c1a1a;
+  --color-on-error: #2d0708;
+  --color-on-error-container: #ffdad6;
+
+  --color-outline: #6b7a6f;
+  --color-outline-variant: #37423b;
+
+  background-color: #0b0d0c;
+}
+
+/* High Contrast — true black, pure white text, hard borders, amber accent. */
+html.theme-high-contrast {
+  --color-background: #000000;
+  --color-surface: #000000;
+  --color-surface-dim: #000000;
+  --color-surface-bright: #3d3d3d;
+  --color-surface-container-lowest: #000000;
+  --color-surface-container-low: #0d0d0d;
+  --color-surface-container: #151515;
+  --color-surface-container-high: #1f1f1f;
+  --color-surface-container-highest: #2e2e2e;
+  --color-surface-variant: #2e2e2e;
+  --color-surface-tint: #ffd166;
+  --color-on-surface: #ffffff;
+  --color-on-background: #ffffff;
+  --color-on-surface-variant: #e6e6e6;
+  --color-inverse-surface: #ffffff;
+  --color-inverse-on-surface: #000000;
+  --color-inverse-primary: #8a5b00;
+
+  --color-primary: #ffd166;
+  --color-primary-container: #ffcc00;
+  --color-on-primary: #000000;
+  --color-on-primary-container: #000000;
+  --color-primary-fixed: #ffe29a;
+  --color-primary-fixed-dim: #ffd166;
+  --color-on-primary-fixed: #000000;
+  --color-on-primary-fixed-variant: #000000;
+
+  --color-secondary: #ffe29a;
+  --color-secondary-container: #b38200;
+  --color-on-secondary: #000000;
+  --color-on-secondary-container: #000000;
+  --color-secondary-fixed: #ffe29a;
+  --color-secondary-fixed-dim: #ffd166;
+  --color-on-secondary-fixed: #000000;
+  --color-on-secondary-fixed-variant: #000000;
+
+  --color-tertiary: #ffe29a;
+  --color-tertiary-container: #a87800;
+  --color-on-tertiary: #000000;
+  --color-on-tertiary-container: #000000;
+  --color-tertiary-fixed: #ffe29a;
+  --color-tertiary-fixed-dim: #ffd166;
+  --color-on-tertiary-fixed: #000000;
+  --color-on-tertiary-fixed-variant: #000000;
+
+  --color-error: #ff6666;
+  --color-error-container: #7a1010;
+  --color-on-error: #000000;
+  --color-on-error-container: #ffffff;
+
+  --color-outline: #ffffff;
+  --color-outline-variant: #8c8c8c;
+
+  background-color: #000000;
+}
+
+/* Body/html follow the themed surface (default palette matches the @theme). */
+html {
+  background-color: var(--color-background);
+  transition: background-color 160ms ease;
+}
+
+/* Reduce motion (§20): kills pulses, glow animation and cursor blink
+ * app-wide via the data-motion root attribute. */
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="full"]) *,
+  html:not([data-motion="full"]) *::before,
+  html:not([data-motion="full"]) *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Accent glow shadows key off the accent-intensity slider (§20). The design
+ * glow literals translate to `rgb(249 115 22 / calc(<a> * var(--accent-alpha)))`
+ * with --accent-alpha defaulting to 1 at the design's 70% intensity. */
