@@ -38,7 +38,7 @@ import {
   useStatsStore,
   type RangeData,
 } from "../stores/useStatsStore";
-import { evaluateAttempt } from "../lib/curriculum/rules";
+import { evaluateAttempt, ACCURACY_GATE } from "../lib/curriculum/rules";
 import type { PerLevelProgress } from "../lib/stats/progressService";
 
 /**
@@ -203,13 +203,13 @@ function AccuracyOverTimeChart({ rangeData }: { rangeData: RangeData }) {
           formatter={(value) => [`${fmt1(Number(value))}%`, "daily accuracy"]}
         />
         {/* shaded below-gate region */}
-        <ReferenceArea y1={88} y2={95} fill="#93000a" fillOpacity={0.18} strokeOpacity={0} />
+        <ReferenceArea y1={88} y2={ACCURACY_GATE} fill="#93000a" fillOpacity={0.18} strokeOpacity={0} />
         <ReferenceLine
-          y={95}
+          y={ACCURACY_GATE}
           stroke={ORANGE}
           strokeDasharray="5 4"
           label={{
-            value: "95% GATE",
+            value: `${ACCURACY_GATE}% GATE`,
             position: "insideBottomRight",
             fill: ORANGE,
             fontSize: 10,
@@ -391,6 +391,8 @@ export default function StatisticsScreen() {
       anchor.download = `typekernel-attempts-${range}.csv`;
       anchor.click();
       URL.revokeObjectURL(url);
+    } catch {
+      // DB query failed — the button resets; nothing is downloaded.
     } finally {
       setExporting(false);
     }
@@ -540,7 +542,7 @@ export default function StatisticsScreen() {
                   Accuracy Over Time
                 </h3>
                 <span className="font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
-                  unlock line: 95%
+                  unlock line: {ACCURACY_GATE}%
                 </span>
               </div>
               <AccuracyOverTimeChart rangeData={rangeData} />

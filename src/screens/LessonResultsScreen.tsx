@@ -15,8 +15,10 @@ import type { AttemptReportRow } from "../lib/schemas";
 import type { CustomLesson } from "../lib/schemas";
 import { customIdFromRef, toCurriculumLesson } from "../lib/customLessons/domain";
 import { fmt1, fmtClock, moduleNumber } from "../lib/format";
+import { getStreak, getTodayActuals } from "../lib/stats/dailyService";
 import { cn } from "../lib/cn";
 import { useCurriculumStore } from "../stores/useCurriculumStore";
+import { useDailyGoalsStore } from "../stores/useDailyGoalsStore";
 import { useSessionStore } from "../stores/useSessionStore";
 import { useUiStore } from "../stores/useUiStore";
 
@@ -78,6 +80,36 @@ export default function LessonResultsScreen() {
   const [dbTried, setDbTried] = useState(false);
   /** §16: the custom module behind a `custom-<uuid>` attempt (null else). */
   const [customModule, setCustomModule] = useState<CustomLesson | null>(null);
+  /** Footer telemetry — REAL streak + today's minutes against the goal. */
+  const [streakDays, setStreakDays] = useState<number | null>(null);
+  const [dailyTarget, setDailyTarget] = useState<{ done: number; goal: number } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [streak, actuals] = await Promise.all([
+          getStreak(),
+          getTodayActuals(),
+        ]);
+        if (cancelled) return;
+        setStreakDays(streak.current);
+        const goal = useDailyGoalsStore.getState().goals.minutesGoal;
+        setDailyTarget({ done: Math.floor(actuals.minutes), goal });
+      } catch {
+        // DB unavailable — the footer degrades to "—".
+        if (!cancelled) {
+          setStreakDays(null);
+          setDailyTarget(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Resolve attempt data: DB row first, in-memory session summary as the
   // degraded fallback (plain-browser preview / failed persistence).
@@ -706,11 +738,21 @@ export default function LessonResultsScreen() {
           </div>
           <div className="flex items-center gap-3">
             <span>
-              Streak: <strong className="font-bold text-primary">12 Days</strong>
+              Streak:{" "}
+              <strong className="font-bold text-primary">
+                {streakDays !== null && streakDays > 0
+                  ? `${streakDays} Day${streakDays === 1 ? "" : "s"}`
+                  : "—"}
+              </strong>
             </span>
             <span className="text-outline-variant">•</span>
             <span>
-              Daily Target: <strong className="text-on-surface">— / — min</strong>
+              Daily Target:{" "}
+              <strong className="text-on-surface">
+                {dailyTarget !== null && dailyTarget.goal > 0
+                  ? `${dailyTarget.done} / ${dailyTarget.goal} min`
+                  : "— / — min"}
+              </strong>
             </span>
           </div>
         </div>

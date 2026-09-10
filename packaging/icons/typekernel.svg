@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- TypeKernel final glyph — orange terminal chevron + caret on surface dark.
+       Canonical source for `tauri icon` (app set) and public/icons/favicon.svg.
+       Design language: surface #0f131c, hairline #31353f, primary #f97316,
+       caret tint #ffb690. -->
+  <rect width="256" height="256" rx="52" fill="#0f131c"/>
+  <rect x="7" y="7" width="242" height="242" rx="46" fill="none" stroke="#31353f" stroke-width="9"/>
+  <path d="M72 78 L34 128 L72 178" fill="none" stroke="#f97316" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M112 168 H186" fill="none" stroke="#ffb690" stroke-width="21" stroke-linecap="round"/>
+</svg>

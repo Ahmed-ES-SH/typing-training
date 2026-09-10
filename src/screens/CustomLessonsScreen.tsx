@@ -550,40 +550,65 @@ export default function CustomLessonsScreen() {
       return;
     }
     const module = formToModule(state);
-    if (state.id !== null) {
-      const { id: _sameId, createdAt: _createdAt, ...modulePatch } = module;
-      void _sameId;
-      void _createdAt;
-      await update(state.id, modulePatch);
-    } else {
-      await create(module);
+    try {
+      if (state.id !== null) {
+        const { id: _sameId, createdAt: _createdAt, ...modulePatch } = module;
+        void _sameId;
+        void _createdAt;
+        await update(state.id, modulePatch);
+      } else {
+        await create(module);
+      }
+    } catch (error) {
+      setImportState({
+        phase: "error",
+        title: "Save failed",
+        issues: [error instanceof Error ? error.message : String(error)],
+      });
+      return;
     }
     setFormOpen(false);
     setForm(EMPTY_FORM);
   };
 
   const exportAll = async () => {
-    const text = serializeEnvelope(
-      buildCustomLessonsEnvelope(lessons, { exportedAt: Date.now() }),
-    );
-    const path = await saveTextFile(backupFilename("custom-lessons"), text);
-    if (path !== null) {
+    try {
+      const text = serializeEnvelope(
+        buildCustomLessonsEnvelope(lessons, { exportedAt: Date.now() }),
+      );
+      const path = await saveTextFile(backupFilename("custom-lessons"), text);
+      if (path !== null) {
+        setImportState({
+          phase: "success",
+          message: `Exported ${lessons.length} module(s) to ${path}`,
+        });
+      }
+    } catch (error) {
       setImportState({
-        phase: "success",
-        message: `Exported ${lessons.length} module(s) to ${path}`,
+        phase: "error",
+        title: "Export failed",
+        issues: [error instanceof Error ? error.message : String(error)],
       });
     }
   };
 
   const exportCollection = async (collectionId: string, modules: CustomLesson[]) => {
-    const text = serializeEnvelope(
-      buildCollectionEnvelope(modules, collectionId, modules[0]?.title ?? "Collection", {
-        exportedAt: Date.now(),
-      }),
-    );
-    const path = await saveTextFile(backupFilename("collection"), text);
-    if (path !== null) {
-      setImportState({ phase: "success", message: `Exported ${modules.length} module(s) to ${path}` });
+    try {
+      const text = serializeEnvelope(
+        buildCollectionEnvelope(modules, collectionId, modules[0]?.title ?? "Collection", {
+          exportedAt: Date.now(),
+        }),
+      );
+      const path = await saveTextFile(backupFilename("collection"), text);
+      if (path !== null) {
+        setImportState({ phase: "success", message: `Exported ${modules.length} module(s) to ${path}` });
+      }
+    } catch (error) {
+      setImportState({
+        phase: "error",
+        title: "Export failed",
+        issues: [error instanceof Error ? error.message : String(error)],
+      });
     }
   };
 
@@ -648,8 +673,17 @@ export default function CustomLessonsScreen() {
 
   const confirmDelete = async () => {
     if (deleteTarget === null) return;
-    await remove(deleteTarget.id);
-    setDeleteTarget(null);
+    try {
+      await remove(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (error) {
+      setImportState({
+        phase: "error",
+        title: "Delete failed",
+        issues: [error instanceof Error ? error.message : String(error)],
+      });
+      setDeleteTarget(null);
+    }
   };
 
   /* --------------------------------- render -------------------------------- */

@@ -83,6 +83,48 @@ export const lessonsRepo = {
       .values(row)
       .onConflictDoUpdate({ target: lessons.id, set: row });
   },
+
+  /**
+   * Multi-row upsert (curriculum seeding: all 260 rows in ONE statement /
+   * IPC round trip — a per-row loop is the startup long pole). Full-row
+   * overwrite on conflict, same semantics as `upsert`.
+   */
+  async upsertMany(lessonsIn: Lesson[]): Promise<void> {
+    if (lessonsIn.length === 0) return;
+    const db = await getDb();
+    const rows = lessonsIn.map((lesson) => {
+      const valid = LessonSchema.parse(lesson);
+      return {
+        id: valid.id,
+        level: valid.level,
+        orderIndex: valid.orderIndex,
+        title: valid.title,
+        description: valid.description,
+        content: valid.content,
+        targetKeys: valid.targetKeys,
+        tags: valid.tags,
+        source: valid.source,
+        createdAt: valid.createdAt,
+      };
+    });
+    await db
+      .insert(lessons)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: lessons.id,
+        set: {
+          level: sql`excluded.level`,
+          orderIndex: sql`excluded.order_index`,
+          title: sql`excluded.title`,
+          description: sql`excluded.description`,
+          content: sql`excluded.content`,
+          targetKeys: sql`excluded.target_keys`,
+          tags: sql`excluded.tags`,
+          source: sql`excluded.source`,
+          createdAt: sql`excluded.created_at`,
+        },
+      });
+  },
 };
 
 /* ---------------------------------------------------------------------------
@@ -635,6 +677,34 @@ export const progressRepo = {
       .onConflictDoUpdate({ target: lessonProgress.lessonId, set: valid });
   },
 
+  /**
+   * Multi-row upsert (first-run seeding: the missing progress rows in ONE
+   * statement / IPC round trip). Full-row overwrite on conflict.
+   */
+  async upsertMany(progressRows: LessonProgress[]): Promise<void> {
+    if (progressRows.length === 0) return;
+    const db = await getDb();
+    const rows = progressRows.map((progress) =>
+      LessonProgressSchema.parse(progress),
+    );
+    await db
+      .insert(lessonProgress)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: lessonProgress.lessonId,
+        set: {
+          status: sql`excluded.status`,
+          bestWpm: sql`excluded.best_wpm`,
+          bestAccuracy: sql`excluded.best_accuracy`,
+          lowestErrorRate: sql`excluded.lowest_error_rate`,
+          attemptCount: sql`excluded.attempt_count`,
+          unlockedAt: sql`excluded.unlocked_at`,
+          completedAt: sql`excluded.completed_at`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+      });
+  },
+
   /** Reads every progress row (Lessons screen / seeding bulk path). */
   async all(): Promise<LessonProgress[]> {
     const db = await getDb();
@@ -977,8 +1047,9 @@ export const settingsRepo = {
 /** Local-time day bucket of a finished_at timestamp (SQLite date modifier). */
 const DAY_BUCKET = sql<string>`date(${lessonAttempts.finishedAt} / 1000, 'unixepoch', 'localtime')`;
 
-/** The §8 gate as a SQL expression (accuracy >= 95 AND wpm > 45). */
-const GATE_PASSED = sql<number>`case when ${lessonAttempts.accuracy} >= 95 and ${lessonAttempts.wpm} > 45 then 1 else 0 end`;
+/** The §8 gate as a SQL expression (accuracy >= 92 AND wpm > 45) — must
+ * mirror `ACCURACY_GATE`/`WPM_GATE` in `lib/curriculum/rules.ts`. */
+const GATE_PASSED = sql<number>`case when ${lessonAttempts.accuracy} >= 92 and ${lessonAttempts.wpm} > 45 then 1 else 0 end`;
 
 /** Lesson charts/ledgers are scoped to lesson attempts — drill attempts
  * (Phase 6, lesson_id NULL) never pollute lesson aggregates. */
@@ -1351,10 +1422,11 @@ export const backupRepo = {  async lessonsAll(): Promise<Lesson[]> {
   /**
    * Deletes every training-data row in FK-safe order (settings + custom
    * lessons included — a progress backup restores the WHOLE local state).
-   * Runs inside the caller's transaction (the §17 restore path).
+   * Runs inside the caller's transaction (the §17 restore path) — the
+   * `withTransaction` handle types as the plain drizzle db.
    */
   async deleteAllForRestore(
-    tx: Parameters<Parameters<Awaited<ReturnType<typeof getDb>>["transaction"]>[0]>[0],
+    tx: Awaited<ReturnType<typeof getDb>>,
   ): Promise<void> {
     await tx.delete(lessonAttempts);
     await tx.delete(lessonProgress);

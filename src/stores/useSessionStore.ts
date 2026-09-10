@@ -103,6 +103,13 @@ interface SessionStore {
 
 let timerId: ReturnType<typeof setInterval> | null = null;
 
+/** Monotonic session generation: bumped by every startLesson/startDrill so
+ * an in-flight finish-persist pipeline (several awaited DB calls) can detect
+ * that a NEW session took over and abort instead of writing the old lesson's
+ * data over the new one (which could leave the new session's persistStage
+ * "done" — its attempt would never be saved). */
+let sessionSeq = 0;
+
 function stopTimer(): void {
   if (timerId !== null) {
     clearInterval(timerId);
@@ -124,6 +131,10 @@ export const useSessionStore = create<SessionStore>((set, get) => {
   const persistFinishedSession = async (): Promise<void> => {
     const { engineState, lesson, trainingSessionId, drill } = get();
     if (engineState === null || lesson === null) return;
+    // The pipeline awaits several DB calls; every step re-checks that no
+    // newer session took over (startLesson/startDrill bump sessionSeq).
+    const seq = sessionSeq;
+    const superseded = (): boolean => sessionSeq !== seq;
 
     if (engineState.startedAt === null || engineState.finishedAt === null) {
       // Nothing was typed — nothing to persist; just show the finished UI.
@@ -174,6 +185,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
      * navigation happens — the Weakness screen owns the flow. */
     if (drill !== null) {
       try {
+        if (superseded()) return;
         if (get().persistStage === "none") {
           await attemptsRepo.insertDrillAttempt(
             { kind: "weakness", ...attemptMetrics, completed: true },
@@ -182,6 +194,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
           set({ persistStage: "attempt-saved", persistError: null });
         }
 
+        if (superseded()) return;
         if (get().persistStage === "attempt-saved") {
           await keyStatsRepo.recordBatch(events, Date.now());
           await keyStatsRepo.recordDaily(events, localDayKey(Date.now()));
@@ -189,6 +202,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
           set({ persistStage: "keys-saved", persistError: null });
         }
 
+        if (superseded()) return;
         if (get().persistStage === "keys-saved") {
           const focus = focusKeyStatsOf(engineState.keyEvents, drill.plan.focusKeys);
           const setResults = [
@@ -237,6 +251,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
             });
           }
         }
+        if (superseded()) return;
         notifyStatsChanged();
       } catch (error) {
         set({
@@ -249,6 +264,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
 
     /* --------------------- lesson persistence branch ------------------ */
     try {
+      if (superseded()) return;
       if (get().persistStage === "none") {
         // §16: custom modules complete OUTSIDE the progress/unlock chain —
         // completeCustomAttempt only appends a kind='custom' ledger row.
@@ -270,6 +286,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
         });
       }
 
+      if (superseded()) return;
       if (get().persistStage === "attempt-saved") {
         await keyStatsRepo.recordBatch(events, Date.now());
         // Phase 6 rollups: today's per-key daily row + planned bigrams —
@@ -279,6 +296,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
         set({ persistStage: "keys-saved", persistError: null });
       }
 
+      if (superseded()) return;
       if (get().persistStage === "keys-saved") {
         if (trainingSessionId !== null) {
           await sessionsRepo.close(
@@ -293,12 +311,15 @@ export const useSessionStore = create<SessionStore>((set, get) => {
 
       // §26: finish -> results. attemptId is null when only the in-memory
       // summary exists (persistence failed) — the Results screen handles it.
+      // A newer session took over mid-pipeline: do NOT yank the user out.
+      if (superseded()) return;
       useUiStore.getState().navigate("lesson-results", {
         "lesson-results": { attemptId: get().outcome?.attempt.id ?? null },
       });
       // Charts/hero aggregates re-query on the next visit (cache drop).
       notifyStatsChanged();
     } catch (error) {
+      if (superseded()) return;
       // Attempts are never silently dropped: surface the error on the
       // Results screen (the summary itself is still shown from memory).
       set({
@@ -340,7 +361,9 @@ export const useSessionStore = create<SessionStore>((set, get) => {
 
     startDrill: async (plan) => {
       // A new drill abandons whatever session runs (§3.7 semantics).
+      const seq = ++sessionSeq;
       await get().abandon();
+      if (sessionSeq !== seq) return; // a newer start took over
       stopTimer();
       const firstSet = plan.sets[0];
       if (!firstSet) return;
@@ -372,6 +395,15 @@ export const useSessionStore = create<SessionStore>((set, get) => {
           durationMs: null,
           charsTyped: 0,
         });
+        if (sessionSeq !== seq) {
+          // Superseded while opening: don't leak the row (or the id).
+          try {
+            await sessionsRepo.close(trainingSessionId, Date.now(), 0, 0);
+          } catch {
+            // tolerated per schema note
+          }
+          return;
+        }
         set({ trainingSessionId, persistError: null });
       } catch (error) {
         set({
@@ -390,7 +422,9 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     startLesson: async (lesson) => {
       // Navigating into a new session while one is running abandons the old
       // one first (§3.7): its session row closes, no attempt row is written.
+      const seq = ++sessionSeq;
       await get().abandon();
+      if (sessionSeq !== seq) return; // a newer start took over
       stopTimer();
       set({
         phase: "running",
@@ -412,6 +446,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
         // safety net so FK targets always exist (it is the ONLY lessons row
         // for custom modules — the seed never writes them).
         await lessonsRepo.upsert(lesson);
+        if (sessionSeq !== seq) return;
         const trainingSessionId = crypto.randomUUID();
         await sessionsRepo.open({
           id: trainingSessionId,
@@ -423,6 +458,15 @@ export const useSessionStore = create<SessionStore>((set, get) => {
           durationMs: null,
           charsTyped: 0,
         });
+        if (sessionSeq !== seq) {
+          // Superseded while opening: don't leak the row (or the id).
+          try {
+            await sessionsRepo.close(trainingSessionId, Date.now(), 0, 0);
+          } catch {
+            // tolerated per schema note
+          }
+          return;
+        }
         set({ trainingSessionId, persistError: null });
       } catch (error) {
         set({
@@ -438,7 +482,11 @@ export const useSessionStore = create<SessionStore>((set, get) => {
 
     abandon: async () => {
       const { phase, trainingSessionId, sessionStartedAt, engineState } = get();
-      if (phase !== "running") return;
+      // "running" and paused-at-set-summary both hold an OPEN training
+      // session row — leaving either path must close it (drills paused at a
+      // set boundary used to leak the row forever). "finished" is owned by
+      // the persist pipeline (its close already happened or is in flight).
+      if (phase !== "running" && phase !== "set-summary") return;
       stopTimer();
 
       if (trainingSessionId !== null) {
@@ -472,7 +520,16 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     },
 
     reset: () => {
+      const { trainingSessionId } = get();
       stopTimer();
+      // Best-effort close of a still-open session row (e.g. switching from a
+      // drill via the curriculum store) — otherwise the row leaks open.
+      if (trainingSessionId !== null) {
+        const now = Date.now();
+        void sessionsRepo
+          .close(trainingSessionId, now, 0, 0)
+          .catch(() => undefined);
+      }
       set({
         phase: "idle",
         lesson: null,

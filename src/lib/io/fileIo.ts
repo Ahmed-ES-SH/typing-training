@@ -3,7 +3,13 @@ import { exists, readTextFile, remove, writeTextFile } from "@tauri-apps/plugin-
 import { appConfigDir, join } from "@tauri-apps/api/path";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { closeDb, DB_PATH, rawExecute } from "../db/client";
+import {
+  closeDb,
+  DB_PATH,
+  rawExecute,
+  resumeReopen,
+  suspendReopen,
+} from "../db/client";
 
 /**
  * Tauri-side plumbing for §17 import/export and the §20 reset flow — kept in
@@ -83,17 +89,24 @@ export interface ResetResult {
  */
 export async function resetDatabase(): Promise<ResetResult> {
   if (!inTauri()) return { removed: 0 };
-  // 1. Checkpoint the WAL so no data lingers in the -wal sidecar.
-  await rawExecute("PRAGMA wal_checkpoint(TRUNCATE);").catch(() => undefined);
-  // 2. Close the pool — the plugin otherwise holds the file open.
-  await closeDb();
-  // 3. Delete DB + sidecars (scoped fs permission: these three paths only).
-  let removed = 0;
-  for (const path of await dbFilePaths()) {
-    if (await exists(path).catch(() => false)) {
-      await remove(path);
-      removed += 1;
+  // Park fire-and-forget queries (debounced settings persist, in-flight
+  // loads) so nothing re-creates the DB file between close and delete.
+  suspendReopen();
+  try {
+    // 1. Checkpoint the WAL so no data lingers in the -wal sidecar.
+    await rawExecute("PRAGMA wal_checkpoint(TRUNCATE);").catch(() => undefined);
+    // 2. Close the pool — the plugin otherwise holds the file open.
+    await closeDb();
+    // 3. Delete DB + sidecars (scoped fs permission: these three paths only).
+    let removed = 0;
+    for (const path of await dbFilePaths()) {
+      if (await exists(path).catch(() => false)) {
+        await remove(path);
+        removed += 1;
+      }
     }
+    return { removed };
+  } finally {
+    resumeReopen();
   }
-  return { removed };
 }

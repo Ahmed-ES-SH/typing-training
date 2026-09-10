@@ -1,0 +1,104 @@
+# TypeKernel — Arch package (-bin style), Phase 9 §3.3.
+#
+# Repackages the release AppImage payload into a native Arch layout:
+#   /usr/bin/typekernel            launcher
+#   /usr/share/typekernel/         app binary + any linuxdeploy-bundled libs
+#   /usr/share/applications/       desktop entry
+#   /usr/share/icons/hicolor/      icon set
+#
+# Usage:
+#   1. pnpm tauri build                    # from the repo root
+#   2. cp ../../src-tauri/target/release/bundle/appimage/TypeKernel_1.0.0_amd64.AppImage .
+#   3. updpkgsums                          # fills sha256sums below
+#   4. makepkg -f
+#   5. sudo pacman -U typekernel-bin-1.0.0-1-x86_64.pkg.tar.zst
+#
+# .SRCINFO regeneration:  makepkg --printsrcinfo > .SRCINFO
+
+pkgname=typekernel-bin
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Offline coding touch-typing trainer — 260-lesson curriculum with programming-symbol focus'
+arch=('x86_64')
+url='https://github.com/typekernel/typing-trainer'
+# TODO(pre-release): add a LICENSE to the repo and keep this SPDX id in sync.
+license=('MIT')
+depends=('gtk3' 'webkit2gtk-4.1')
+optdepends=('hicolor-icon-theme: icon theme lookup')
+provides=('typekernel')
+conflicts=('typekernel')
+options=('!strip')
+source=("TypeKernel_${pkgver}_amd64.AppImage")
+sha256sums=('b3e1d2bc4c9c5dec6eae1855362e61d8b0ac691a8992122361a69f19df5e0dce')
+
+prepare() {
+  chmod +x "${srcdir}/TypeKernel_${pkgver}_amd64.AppImage"
+  "${srcdir}/TypeKernel_${pkgver}_amd64.AppImage" --appimage-extract >/dev/null
+}
+
+package() {
+  local sq="${srcdir}/squashfs-root"
+
+  # The Tauri v2 binary embeds the entire frontend, so the payload is one
+  # ELF plus (optionally) libraries linuxdeploy bundled next to it.
+  # The Tauri v2 binary embeds the entire frontend, so the payload is one
+  # ELF plus (optionally) libraries linuxdeploy bundled next to it. The
+  # payload also contains bundled utilities (e.g. xdg-open) — pick the
+  # actual app binary by name, never "first non-AppRun file".
+  local appbin
+  appbin="$(find "$sq/usr/bin" -maxdepth 1 -type f \( -name 'typekernel' -o -name 'TypeKernel' \) -print -quit)"
+  if [ -z "$appbin" ]; then
+    echo 'ERROR: no app binary found in extracted AppImage (usr/bin)' >&2
+    return 1
+  fi
+
+  install -Dm755 "$appbin" "$pkgdir/usr/share/typekernel/typekernel"
+  if [ -d "$sq/usr/lib" ]; then
+    cp -a "$sq/usr/lib" "$pkgdir/usr/share/typekernel/lib"
+  fi
+
+  # /usr/bin launcher — keeps any bundled-library path alive outside the
+  # AppImage runtime while behaving like an ordinary system binary. The
+  # payload's webkit has its helper path patched to an AppDir-RELATIVE
+  # path ("././lib/webkit2gtk-4.1/...") — resolved against CWD, so the
+  # launcher must run from the resource dir (same trick as AppRun).
+  install -d "$pkgdir/usr/bin"
+  cat > "$pkgdir/usr/bin/typekernel" <<'EOF'
+#!/bin/sh
+TK_HOME="/usr/share/typekernel"
+export LD_LIBRARY_PATH="$TK_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+cd "$TK_HOME" || exit 1
+exec "$TK_HOME/typekernel" "$@"
+EOF
+  chmod 755 "$pkgdir/usr/bin/typekernel"
+
+  # Desktop entry written explicitly (§2): Exec points at the packaged
+  # launcher — not the AppImage's AppRun — and StartupWMClass matches the
+  # binary name so Wayland/X11 window matching works.
+  install -d "$pkgdir/usr/share/applications"
+  cat > "$pkgdir/usr/share/applications/typekernel.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=TypeKernel
+GenericName=Touch Typing Trainer
+Comment=Offline coding touch-typing trainer with a 260-lesson curriculum
+Exec=/usr/bin/typekernel
+TryExec=/usr/bin/typekernel
+Icon=typekernel
+Terminal=false
+Categories=Development;Education;
+StartupWMClass=typekernel
+StartupNotify=true
+EOF
+
+  # Icons via the hicolor hierarchy; Arch's stock pacman hooks refresh the
+  # icon cache and desktop database after install — no .install script needed.
+  install -d "$pkgdir/usr/share/icons/hicolor"
+  if [ -d "$sq/usr/share/icons/hicolor" ]; then
+    cp -a "$sq/usr/share/icons/hicolor/." "$pkgdir/usr/share/icons/hicolor/"
+  else
+    install -Dm644 "$sq/usr/share/icons/hicolor/512x512/apps/typekernel.png" \
+      "$pkgdir/usr/share/icons/hicolor/512x512/apps/typekernel.png"
+  fi
+}

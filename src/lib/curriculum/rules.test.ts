@@ -18,11 +18,11 @@ const attempt = (wpm: number, accuracy: number, completed = true) => ({
   completed,
 });
 
-describe("PRD §8 unlock table (verbatim)", () => {
+describe("PRD §8 unlock table (as amended: 92% gate)", () => {
   it.each([
-    [50, 93, "FAIL"],
+    [50, 91, "FAIL"],
     [44, 98, "FAIL"],
-    [50, 95, "PASS"],
+    [50, 92, "PASS"],
     [46, 97, "PASS"],
   ] as const)("%i WPM / %i%% -> %s", (wpm, accuracy, expected) => {
     expect(evaluateAttempt(attempt(wpm, accuracy))).toBe(expected);
@@ -36,10 +36,10 @@ describe("§8 boundaries", () => {
     expect(evaluateAttempt(attempt(45.0001, 95))).toBe("PASS");
   });
 
-  it("fails at 94.9% accuracy, passes at exactly 95%", () => {
-    expect(ACCURACY_GATE).toBe(95);
-    expect(evaluateAttempt(attempt(50, 94.9))).toBe("FAIL");
-    expect(evaluateAttempt(attempt(50, 95))).toBe("PASS");
+  it("fails at 91.9% accuracy, passes at exactly 92%", () => {
+    expect(ACCURACY_GATE).toBe(92);
+    expect(evaluateAttempt(attempt(50, 91.9))).toBe("FAIL");
+    expect(evaluateAttempt(attempt(50, 92))).toBe("PASS");
   });
 
   it("fails incomplete attempts regardless of numbers", () => {
@@ -66,6 +66,6 @@ describe("grades (presentational, never affect unlocking)", () => {
   });
 
   it("gives failing accuracy grades even at high speed", () => {
-    expect(gradeFor(attempt(80, 93))).toBe("D");
+    expect(gradeFor(attempt(80, 91))).toBe("D");
   });
 });

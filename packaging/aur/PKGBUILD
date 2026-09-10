@@ -1,0 +1,75 @@
+# TypeKernel — AUR scaffold (NOT published; PRD §3 lists AUR as "later").
+#
+# This is the -bin style AUR package pointing at the future GitHub release
+# asset. Do not submit until:
+#   - the v1.0.0 release + AppImage asset exist on GitHub (see the
+#     submission checklist in this directory)
+#   - `updpkgsums` has replaced the SKIP below with the real checksum
+#
+# Local test: makepkg -f  (after the release asset exists)
+
+pkgname=typekernel-bin
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Offline coding touch-typing trainer — 260-lesson curriculum with programming-symbol focus'
+arch=('x86_64')
+url='https://github.com/typekernel/typing-trainer'
+license=('MIT')
+depends=('gtk3' 'webkit2gtk-4.1')
+optdepends=('hicolor-icon-theme: icon theme lookup')
+provides=('typekernel')
+conflicts=('typekernel')
+options=('!strip')
+source=("TypeKernel_${pkgver}_amd64.AppImage::https://github.com/typekernel/typing-trainer/releases/download/v${pkgver}/TypeKernel_${pkgver}_amd64.AppImage")
+sha256sums=('SKIP')
+
+prepare() {
+  chmod +x "${srcdir}/TypeKernel_${pkgver}_amd64.AppImage"
+  "${srcdir}/TypeKernel_${pkgver}_amd64.AppImage" --appimage-extract >/dev/null
+}
+
+package() {
+  # Keep this in sync with packaging/arch/PKGBUILD — identical layout so
+  # the local test package and the future AUR package are interchangeable.
+  local sq="${srcdir}/squashfs-root"
+  # Pick the app binary by name — the payload also bundles utilities
+  # (xdg-open) that must never be installed as the app.
+  local appbin
+  appbin="$(find "$sq/usr/bin" -maxdepth 1 -type f \( -name 'typekernel' -o -name 'TypeKernel' \) -print -quit)"
+  [ -n "$appbin" ] || { echo 'ERROR: no app binary in AppImage payload' >&2; return 1; }
+
+  install -Dm755 "$appbin" "$pkgdir/usr/share/typekernel/typekernel"
+  if [ -d "$sq/usr/lib" ]; then
+    cp -a "$sq/usr/lib" "$pkgdir/usr/share/typekernel/lib"
+  fi
+
+  install -d "$pkgdir/usr/bin"
+  cat > "$pkgdir/usr/bin/typekernel" <<'EOF'
+#!/bin/sh
+TK_HOME="/usr/share/typekernel"
+export LD_LIBRARY_PATH="$TK_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+cd "$TK_HOME" || exit 1
+exec "$TK_HOME/typekernel" "$@"
+EOF
+  chmod 755 "$pkgdir/usr/bin/typekernel"
+
+  install -d "$pkgdir/usr/share/applications"
+  cat > "$pkgdir/usr/share/applications/typekernel.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=TypeKernel
+GenericName=Touch Typing Trainer
+Comment=Offline coding touch-typing trainer with a 260-lesson curriculum
+Exec=/usr/bin/typekernel
+TryExec=/usr/bin/typekernel
+Icon=typekernel
+Terminal=false
+Categories=Development;Education;
+StartupWMClass=typekernel
+StartupNotify=true
+EOF
+
+  install -d "$pkgdir/usr/share/icons/hicolor"
+  cp -a "$sq/usr/share/icons/hicolor/." "$pkgdir/usr/share/icons/hicolor/"
+}

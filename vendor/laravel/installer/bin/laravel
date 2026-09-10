@@ -1,0 +1,20 @@
+#!/usr/bin/env php
+<?php
+
+if (file_exists(__DIR__.'/../../../autoload.php')) {
+    require __DIR__.'/../../../autoload.php';
+} else {
+    require __DIR__.'/../vendor/autoload.php';
+}
+
+$app = new Symfony\Component\Console\Application('Laravel Installer', '5.32.0');
+
+if (method_exists($app, 'addCommand')) {
+    $app->addCommand(new Laravel\Installer\Console\NewCommand);
+    $app->addCommand(new Laravel\Installer\Console\PackageCommand);
+} else {
+    $app->add(new Laravel\Installer\Console\NewCommand);
+    $app->add(new Laravel\Installer\Console\PackageCommand);
+}
+
+$app->run();

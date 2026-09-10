@@ -182,6 +182,18 @@ function ModuleSidebar({
   onSelect: (lesson: Lesson) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  // Ctrl+B is the documented toggle (kbd hint in the footer) — without this
+  // handler a collapsed drawer could never be restored from the keyboard.
+  useEffect(() => {
+    const onToggle = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        setCollapsed((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", onToggle);
+    return () => window.removeEventListener("keydown", onToggle);
+  }, []);
   const [tab, setTab] = useState<"all" | "remaining">("all");
   const level = lesson?.level ?? 1;
   const meta = getLevelMeta(level);
@@ -376,7 +388,7 @@ function CodeBuffer({ lesson, engineState, running }: {
       </div>
 
       {/* Buffer body */}
-      <div className="relative flex-1 overflow-auto p-space-base font-code-lg text-code-lg leading-loose sm:p-space-lg">
+      <div className="relative flex-1 overflow-auto p-space-base font-code-lg text-[20px] leading-[2.5rem] sm:p-space-lg">
         {lines.map((line, lineIndex) => {
           const isActive = lineIndex === activeLine && running;
           const caretAtLineEnd =
@@ -419,7 +431,7 @@ function CodeBuffer({ lesson, engineState, running }: {
                     return (
                       <span key={globalIndex} className="relative inline-block">
                         {isCurrent && (
-                          <span className="absolute -left-0.5 top-1/2 h-5 w-0.5 -translate-y-1/2 animate-pulse bg-primary shadow-[0_0_8px_rgb(249_115_22_calc(1_*_var(--accent-alpha)))]" />
+                          <span className="absolute -left-0.5 top-1/2 h-7 w-0.5 -translate-y-1/2 animate-pulse bg-primary shadow-[0_0_8px_rgb(249_115_22_calc(1_*_var(--accent-alpha)))]" />
                         )}
                         <span
                           className={
@@ -439,7 +451,7 @@ function CodeBuffer({ lesson, engineState, running }: {
                   })
                 )}
                 {caretAtLineEnd && (
-                  <span className="ml-0.5 inline-block h-6 w-2.5 animate-pulse bg-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(1_*_var(--accent-alpha)))]" />
+                  <span className="ml-0.5 inline-block h-7 w-2.5 animate-pulse bg-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(1_*_var(--accent-alpha)))]" />
                 )}
               </span>
             </div>
@@ -475,9 +487,14 @@ export default function TypingSessionScreen() {
   useEffect(() => {
     if (!heatmapVisible || heatmapData.length > 0) return;
     let cancelled = false;
-    void getCharAccuracy("30d").then((data) => {
-      if (!cancelled) setHeatmapData(data);
-    });
+    void getCharAccuracy("30d")
+      .then((data) => {
+        if (!cancelled) setHeatmapData(data);
+      })
+      .catch(() => {
+        // DB unavailable — the heatmap renders its empty state.
+        if (!cancelled) setHeatmapData([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -491,12 +508,17 @@ export default function TypingSessionScreen() {
   useEffect(() => {
     const lessonId = sessionParams?.lessonId ?? null;
     if (phase === "idle" && lessonId !== null && startedFor.current !== lessonId) {
-      void resolveTypingLesson(lessonId).then((selected) => {
-        if (selected) {
-          startedFor.current = lessonId;
-          void startLesson(selected);
-        }
-      });
+      void resolveTypingLesson(lessonId)
+        .then((selected) => {
+          if (selected) {
+            startedFor.current = lessonId;
+            void startLesson(selected);
+          }
+        })
+        .catch(() => {
+          // Deleted custom module / DB failure — "No module loaded" state
+          // already renders; just don't leave an unhandled rejection.
+        });
     }
   }, [phase, sessionParams, startLesson]);
 

@@ -5,7 +5,7 @@ import { MasteryGauge, tierLabel } from "../components/MasteryGauge";
 import { Sparkline } from "../components/Sparkline";
 import { StatCard } from "../components/StatCard";
 import { ConsistencyStrip } from "../components/ConsistencyStrip";
-import { evaluateAttempt } from "../lib/curriculum/rules";
+import { evaluateAttempt, ACCURACY_GATE } from "../lib/curriculum/rules";
 import { attemptsRepo, progressRepo, statsRepo } from "../lib/db/repositories";
 import { cn } from "../lib/cn";
 import {
@@ -115,9 +115,15 @@ export default function DashboardScreen() {
   const dbErrorMessage = useCurriculumStore((s) => s.dbError);
   const lastBackupAt = useSettingsStore((s) => s.settings.lastBackupAt);
   const progressMap = useCurriculumStore((s) => s.progress);
+  // First paint must not race bootstrapping: on a FRESH database the
+  // dashboard mounted before the 260 progress rows existed and read an empty
+  // position — showing "Curriculum Complete" on day one. Load (and reload)
+  // once the curriculum store reports bootstrapping done.
+  const curriculumLoaded = useCurriculumStore((s) => s.loaded);
   const now = Date.now();
 
   useEffect(() => {
+    if (!curriculumLoaded) return;
     let cancelled = false;
     (async () => {
       try {
@@ -187,7 +193,7 @@ export default function DashboardScreen() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [curriculumLoaded]);
 
   // Enter resumes the current lesson from the dashboard (plan §3.4).
   useEffect(() => {
@@ -269,6 +275,16 @@ export default function DashboardScreen() {
               Your neuromuscular buffer is warm. Resume the active module or run
               a weakness drill to keep the streak alive.
             </p>
+            <div className="mt-space-base flex flex-wrap gap-space-sm">
+              <button
+                type="button"
+                onClick={() => useUiStore.getState().navigate("lessons")}
+                className="flex items-center gap-2 rounded-lg border border-surface-container-highest/60 bg-surface-container px-space-base py-2 font-label-md text-label-md font-semibold text-on-surface transition-colors hover:bg-surface-container-high"
+              >
+                <span className="material-symbols-outlined text-[18px] text-primary">map</span>
+                <span>Browse Lessons</span>
+              </button>
+            </div>
 
             {/* Rolling stats strip */}
             <div className="mt-space-lg flex flex-wrap gap-space-md">
@@ -368,9 +384,9 @@ export default function DashboardScreen() {
                     {data.currentLessonLast && (
                       <span className="block font-code-sm text-code-sm text-on-surface-variant">
                         {fmt1(data.currentLessonLast.accuracy)}% ACC{" "}
-                        {data.currentLessonLast.accuracy >= 95
+                        {data.currentLessonLast.accuracy >= ACCURACY_GATE
                           ? "(gate met)"
-                          : "(NEEDS 95%)"}
+                          : `(NEEDS ${ACCURACY_GATE}%)`}
                       </span>
                     )}
                   </div>

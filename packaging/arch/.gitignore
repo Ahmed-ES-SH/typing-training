@@ -1,0 +1,5 @@
+# Local makepkg artifacts — never commit.
+TypeKernel_*.AppImage
+*.pkg.tar.zst
+src/
+pkg/

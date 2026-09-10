@@ -1,14 +1,14 @@
 /**
  * Unlock rule & grading (PRD §8; Phase 4 plan §2, §3.5).
  *
- * The gate is verbatim from the PRD: an attempt passes only when the SAME
- * attempt has accuracy >= 95 AND WPM > 45 (exactly 45.0 fails) while the
- * buffer was fully completed. Unlock state itself is enforced at the data
- * layer (`progressRepo.unlockIfLocked`) — grades are presentational only
- * and never affect unlocking.
+ * The gate is verbatim from the PRD §8 as amended: an attempt passes only
+ * when the SAME attempt has accuracy >= 92 AND WPM > 45 (exactly 45.0
+ * fails) while the buffer was fully completed. Unlock state itself is
+ * enforced at the data layer (`progressRepo.unlockIfLocked`) — grades are
+ * presentational only and never affect unlocking.
  */
 
-export const ACCURACY_GATE = 95;
+export const ACCURACY_GATE = 92;
 /** Strictly greater-than: 45.0 WPM does NOT pass. */
 export const WPM_GATE = 45;
 

@@ -140,7 +140,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
       const settings = AppSettingsSchema.parse({ ...get().settings, ...patch });
       applyDocumentSettings(settings);
       set({ settings });
-      persist(settings);
+      // Boot-time writes (the lastScreen effect fires before hydrate lands)
+      // must not clobber the persisted row with pre-hydration defaults —
+      // only persist once the stored row has been read.
+      if (get().hydrated) persist(settings);
     },
   };
 });

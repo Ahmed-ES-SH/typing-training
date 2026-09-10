@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    typing_trainer_lib::run()
+    typekernel_lib::run()
 }

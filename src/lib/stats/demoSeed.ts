@@ -131,7 +131,7 @@ export async function seedDemoHistory(now = Date.now()): Promise<{ attempts: num
       );
 
       // 3. Gate passes mark the lesson completed and unlock the next one.
-      if (accuracy >= 95 && wpm > 45) {
+      if (accuracy >= 92 && wpm > 45) {
         const current = await progressRepo.get(lesson.id);
         await progressRepo.upsert({
           lessonId: lesson.id,

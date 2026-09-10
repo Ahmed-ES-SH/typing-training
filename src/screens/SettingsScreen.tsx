@@ -97,22 +97,40 @@ export default function SettingsScreen() {
   /* ------------------------------- data actions --------------------------- */
 
   const exportBackup = async () => {
-    const envelope = await collectBackup();
-    const path = await saveTextFile(
-      backupFilename("progress-backup"),
-      serializeEnvelope(envelope),
-    );
-    if (path !== null) {
-      update({ lastBackupAt: Date.now() });
+    try {
+      const envelope = await collectBackup();
+      const path = await saveTextFile(
+        backupFilename("progress-backup"),
+        serializeEnvelope(envelope),
+      );
+      if (path !== null) {
+        update({ lastBackupAt: Date.now() });
+        setImportState({
+          phase: "success",
+          message: `Backup written to ${path}`,
+        });
+      }
+    } catch (error) {
       setImportState({
-        phase: "success",
-        message: `Backup written to ${path}`,
+        phase: "error",
+        title: "Backup failed",
+        issues: [error instanceof Error ? error.message : String(error)],
       });
     }
   };
 
   const startBackupImport = async () => {
-    const picked = await readTextFileViaDialog();
+    let picked;
+    try {
+      picked = await readTextFileViaDialog();
+    } catch (error) {
+      setImportState({
+        phase: "error",
+        title: "Could not read file",
+        issues: [error instanceof Error ? error.message : String(error)],
+      });
+      return;
+    }
     if (picked === null) return;
     const parsed = parseEnvelope(picked.contents);
     if (!parsed.ok) {

@@ -61,9 +61,9 @@ export function KeyboardVisualization({
   }, [layout, nextChar, highlightNextKey]);
 
   return (
-    <div className={cn("flex w-full flex-col gap-1", className)}>
+    <div className={cn("flex w-full flex-col gap-1.5", className)}>
       {layout.rows.map((row, rowIndex) => (
-        <div key={rowIndex} className="flex justify-center gap-1">
+        <div key={rowIndex} className="flex w-full gap-1.5">
           {row.map((key) => {
             const isTarget = key.id === targetId;
             const isShiftPartner =
@@ -74,15 +74,14 @@ export function KeyboardVisualization({
             return (
               <div
                 key={key.id}
-                style={key.width !== undefined ? { width: `${key.width * 2}rem` } : undefined}
+                style={{ flexGrow: key.width ?? 1, flexBasis: 0 }}
                 className={cn(
-                  "flex h-7 min-w-8 items-center justify-center rounded border text-[10px] font-code-sm",
-                  key.width !== undefined ? "flex-none" : "w-8",
+                  "flex h-11 min-w-0 items-center justify-center rounded-md border text-xs font-code-sm",
                   highlighted
                     ? "border-primary bg-primary-container font-bold text-on-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(0.9_*_var(--accent-alpha)))] ring-1 ring-primary"
                     : "border-surface-container-highest/40 bg-surface-container text-on-surface-variant",
                   !highlighted && fingerGuides && key.kind !== "special" && FINGER_TINT[key.finger],
-                  key.kind === "special" && !highlighted && "bg-surface-container-high text-[9px] text-outline",
+                  key.kind === "special" && !highlighted && "bg-surface-container-high text-[10px] text-outline",
                 )}
                 title={`${fingerMeta.label}${key.shift ? ` — shift: ${key.shift}` : ""}`}
               >
@@ -90,13 +89,13 @@ export function KeyboardVisualization({
                   <span className="px-1">{key.label}</span>
                 ) : key.shift !== undefined ? (
                   <span className="flex flex-col items-center leading-none">
-                    <span className={cn("text-[8px]", highlighted ? "text-on-primary-container" : "text-outline")}>
+                    <span className={cn("text-[10px]", highlighted ? "text-on-primary-container" : "text-outline")}>
                       {key.shift}
                     </span>
                     <span>{key.base === " " ? "" : key.base}</span>
                   </span>
                 ) : key.base === " " ? (
-                  <span className="text-[9px] text-outline-variant">SPACE</span>
+                  <span className="text-[10px] text-outline-variant">SPACE</span>
                 ) : (
                   key.base
                 )}

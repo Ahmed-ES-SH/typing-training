@@ -1,0 +1,17 @@
+pkgbase = typekernel-bin
+	pkgdesc = Offline coding touch-typing trainer — 260-lesson curriculum with programming-symbol focus
+	pkgver = 1.0.0
+	pkgrel = 1
+	url = https://github.com/typekernel/typing-trainer
+	arch = x86_64
+	license = MIT
+	depends = gtk3
+	depends = webkit2gtk-4.1
+	optdepends = hicolor-icon-theme: icon theme lookup
+	provides = typekernel
+	conflicts = typekernel
+	options = !strip
+	source = TypeKernel_1.0.0_amd64.AppImage
+	sha256sums = b3e1d2bc4c9c5dec6eae1855362e61d8b0ac691a8992122361a69f19df5e0dce
+
+pkgname = typekernel-bin

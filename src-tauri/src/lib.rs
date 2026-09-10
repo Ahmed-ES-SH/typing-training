@@ -1,8 +1,95 @@
+use std::path::PathBuf;
+
+use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
+
+/// Phase 9 (§3.1): the 1.0 identifier. Tauri keys the Linux app-data and
+/// app-config dirs off the identifier, so pre-1.0 dev installs live under
+/// the legacy template dirs below.
+const NEW_IDENTIFIER: &str = "com.typekernel.app";
+
+/// Legacy identifier locations from pre-1.0 dev installs: the template
+/// default (`com.adev.typing-trainer`) plus the bare product-name dir some
+/// setups resolve to.
+const LEGACY_IDENTIFIERS: &[&str] = &["com.adev.typing-trainer", "typing-trainer"];
+
+/// The SQLite filename is intentionally UNCHANGED across the identifier
+/// rename, so an adopted DB keeps working with zero migration — the
+/// versioned migrations below are idempotent and re-apply cleanly.
+const DB_FILES: &[&str] = &[
+    "typing_trainer.db",
+    "typing_trainer.db-wal",
+    "typing_trainer.db-shm",
+    "typing_trainer.db-journal",
+];
+
+fn base_dir(env_var: &str, home_fallback: &str) -> PathBuf {
+    if let Ok(dir) = std::env::var(env_var) {
+        if !dir.is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    PathBuf::from(home).join(home_fallback)
+}
+
+/// First-boot adoption (§3.1): if the new identifier's dir has no database
+/// yet but a legacy dir does (dev installs from Phase ≤ 8), copy the DB +
+/// sidecars over. Runs on plain `std::fs` BEFORE the Tauri builder starts so
+/// it always wins the race against the sql plugin's migrations. Copy, not
+/// move — the legacy dir is left untouched as a fallback.
+fn adopt_legacy_data() {
+    // tauri-plugin-sql resolves `sqlite:<name>` against the app CONFIG dir;
+    // webview/app state lives under the app DATA dir — cover both scopes.
+    let scopes = [
+        base_dir("XDG_DATA_HOME", ".local/share"),
+        base_dir("XDG_CONFIG_HOME", ".config"),
+    ];
+    for scope in &scopes {
+        let new_dir = scope.join(NEW_IDENTIFIER);
+        if new_dir.join(DB_FILES[0]).exists() {
+            continue; // fresh 1.0 data already present — nothing to adopt.
+        }
+        for legacy in LEGACY_IDENTIFIERS {
+            let legacy_db = scope.join(legacy).join(DB_FILES[0]);
+            if !legacy_db.exists() {
+                continue;
+            }
+            if std::fs::create_dir_all(&new_dir).is_err() {
+                eprintln!("[typekernel] adoption: cannot create {new_dir:?}");
+                break;
+            }
+            let mut adopted = false;
+            for file in DB_FILES {
+                let src = scope.join(legacy).join(file);
+                if src.exists() {
+                    match std::fs::copy(&src, new_dir.join(file)) {
+                        Ok(_) => adopted = true,
+                        Err(e) => eprintln!("[typekernel] adoption: copy {src:?} failed: {e}"),
+                    }
+                }
+            }
+            if adopted {
+                eprintln!("[typekernel] adoption: migrated data from {legacy_db:?} to {new_dir:?}");
+            }
+            break;
+        }
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    adopt_legacy_data();
+
     tauri::Builder::default()
+        // Phase 9 (§2): must be the FIRST registered plugin — a second launch
+        // hands over here and exits, focusing the existing main window.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         // Phase 7 (§17): file pickers + scoped fs for JSON import/export.
         // Picking a file through the dialog plugin extends the fs scope to
@@ -56,4 +143,47 @@ pub fn run() {
         )
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// The adoption copy set must cover every file the reset flow
+    /// (`src/lib/io/fileIo.ts`) and WAL mode can leave behind — a partial
+    /// copy (db without -wal) would silently drop recent attempts.
+    #[test]
+    fn adoption_covers_all_db_sidecars() {
+        let set: HashSet<&str> = DB_FILES.iter().copied().collect();
+        for f in [
+            "typing_trainer.db",
+            "typing_trainer.db-wal",
+            "typing_trainer.db-shm",
+            "typing_trainer.db-journal",
+        ] {
+            assert!(set.contains(f), "DB_FILES must include {f}");
+        }
+    }
+
+    /// base_dir honors XDG env vars and falls back to $HOME subdirs.
+    #[test]
+    fn base_dir_prefers_xdg_then_home() {
+        // SAFETY: single-threaded test process; env mutation is contained.
+        unsafe {
+            std::env::set_var("XDG_DATA_HOME", "/tmp/tk-xdg-test");
+        }
+        assert_eq!(
+            base_dir("XDG_DATA_HOME", ".local/share"),
+            PathBuf::from("/tmp/tk-xdg-test")
+        );
+        unsafe {
+            std::env::remove_var("XDG_DATA_HOME");
+        }
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+        assert_eq!(
+            base_dir("XDG_DATA_HOME", ".local/share"),
+            PathBuf::from(home).join(".local/share")
+        );
+    }
 }

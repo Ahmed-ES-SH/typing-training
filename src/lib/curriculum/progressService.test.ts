@@ -72,7 +72,7 @@ describe("completeAttempt — §26 pipeline", () => {
 
     const failLowSpeed = await completeAttempt(
       getLesson("l1-001")!,
-      metrics(50, 93),
+      metrics(50, 91),
       keyReport,
       1_000,
     );

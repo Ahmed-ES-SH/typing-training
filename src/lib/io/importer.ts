@@ -1,5 +1,5 @@
 import { backupRepo, customLessonsRepo } from "../db/repositories";
-import { getDb } from "../db/client";
+import { withTransaction } from "../db/client";
 import {
   bigramStatistics,
   customLessons,
@@ -266,8 +266,6 @@ export async function applyEnvelope(
   const rowIssues = crossRowIssues(envelope);
   if (rowIssues.length > 0) throw new ImportRejectedError(rowIssues);
 
-  const db = await getDb();
-
   if (envelope.kind === "progress-backup") {
     if (options.confirmReplace !== true) {
       throw new ImportRejectedError([
@@ -275,7 +273,7 @@ export async function applyEnvelope(
       ]);
     }
     const p = envelope.payload;
-    await db.transaction(async (tx) => {
+    await withTransaction(async (tx) => {
       // FK-safe order: children first on delete, parents first on insert.
       await backupRepo.deleteAllForRestore(tx);
       if (p.lessons.length > 0) await tx.insert(lessonsTable).values(p.lessons);
@@ -314,7 +312,7 @@ export async function applyEnvelope(
   );
   const writes: ExportedCustomLesson[] = [...plan.added, ...plan.updated, ...plan.renamed];
   if (writes.length > 0) {
-    await db.transaction(async (tx) => {
+    await withTransaction(async (tx) => {
       // Row-level upsert with a full-row overwrite SET: planMerge already
       // decided these rows win (newer updated_at / fresh ids).
       for (const row of writes) {

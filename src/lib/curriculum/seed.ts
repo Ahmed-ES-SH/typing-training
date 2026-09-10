@@ -12,9 +12,9 @@ import type { LessonProgress } from "../schemas";
  * releases simply appear as new locked rows.
  */
 export async function seedCurriculum(now = Date.now()): Promise<void> {
-  for (const lesson of CURRICULUM_LESSONS) {
-    await lessonsRepo.upsert(lesson);
-  }
+  // ONE multi-row upsert per table (not 260 per-row IPC round trips — that
+  // loop was the startup long pole against the §25 1500 ms boot budget).
+  await lessonsRepo.upsertMany(CURRICULUM_LESSONS);
 
   const existing = await progressRepo.all();
   const seeded = new Set(existing.map((row) => row.lessonId));
@@ -32,10 +32,5 @@ export async function seedCurriculum(now = Date.now()): Promise<void> {
     completedAt: null,
     updatedAt: now,
   }));
-
-  // 260 sequential single-row inserts are fast enough at startup and keep
-  // each row independent — one bad row cannot poison the rest.
-  for (const progress of missing) {
-    await progressRepo.upsert(progress);
-  }
+  await progressRepo.upsertMany(missing);
 }

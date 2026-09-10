@@ -6,6 +6,7 @@ import {
   type CurriculumLevel,
 } from "../content";
 import { attemptsRepo, keyStatsRepo } from "../lib/db/repositories";
+import { ACCURACY_GATE } from "../lib/curriculum/rules";
 import { fmt1, moduleNumber } from "../lib/format";
 import type { KeyStatRow, Lesson, LessonProgress } from "../lib/schemas";
 import { cn } from "../lib/cn";
@@ -312,10 +313,10 @@ function ModuleCard({
               {progress && progress.bestWpm > 0 ? `${fmt1(progress.bestWpm)} WPM` : "—"}
             </strong>
           </span>
-          <span className={progress && progress.bestAccuracy >= 95 ? "text-secondary" : "text-error"}>
+          <span className={progress && progress.bestAccuracy >= ACCURACY_GATE ? "text-secondary" : "text-error"}>
             {progress && progress.attemptCount > 0
-              ? `${fmt1(progress.bestAccuracy)}% ACC${progress.bestAccuracy >= 95 ? "" : " (NEEDS 95%)"}`
-              : "0.0% ACC (NEEDS 95%)"}
+              ? `${fmt1(progress.bestAccuracy)}% ACC${progress.bestAccuracy >= ACCURACY_GATE ? "" : ` (NEEDS ${ACCURACY_GATE}%)`}`
+              : `0.0% ACC (NEEDS ${ACCURACY_GATE}%)`}
           </span>
         </div>
       )}
@@ -323,13 +324,13 @@ function ModuleCard({
         <div className="py-space-xs text-center font-code-sm text-code-sm text-on-surface-variant">
           <span>
             TARGET SPEED: <strong className="text-primary">&gt; 45 WPM</strong> • PASS ACC:{" "}
-            <strong className="text-primary">95.0%</strong>
+            <strong className="text-primary">{ACCURACY_GATE}.0%</strong>
           </span>
         </div>
       )}
       {status === "locked" && (
         <div className="py-space-xs text-center font-code-sm text-code-sm text-on-surface-variant/70">
-          Requires &gt;= 95% Acc on the previous module
+          Requires &gt;= {ACCURACY_GATE}% Acc on the previous module
         </div>
       )}
       {status === "locked" ? (
@@ -588,7 +589,7 @@ function LevelSection({
               <span className="material-symbols-outlined text-[18px] text-primary">verified_user</span>
               <span className="font-medium text-on-surface">Clearance Criteria:</span>
               <span>
-                Must sustain <span className="font-bold text-primary">&gt;= 95% Accuracy</span> &amp;{" "}
+                Must sustain <span className="font-bold text-primary">&gt;= {ACCURACY_GATE}% Accuracy</span> &amp;{" "}
                 <span className="font-bold text-primary">&gt; 45 WPM</span> in the same attempt to
                 unlock subsequent modules.
               </span>

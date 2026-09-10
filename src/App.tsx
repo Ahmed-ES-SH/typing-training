@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import type { ComponentType } from "react";
 
 import { Shell } from "./components/Shell";
+import { NavSidebar } from "./components/NavSidebar";
 import { TopBar } from "./components/TopBar";
 import type { ScreenId } from "./lib/screens";
 import { getScreen } from "./lib/screens";
@@ -50,15 +51,13 @@ function App() {
 
   // Phase 4 startup: seed the 260-lesson curriculum and load progress rows
   // (idempotent; failures surface as a graceful in-app error state).
-  useEffect(() => {
-    void bootstrap();
-  }, [bootstrap]);
-
   // Phase 7: hydrate preferences from the settings table, then apply the
-  // §20 launch behavior once the curriculum is loaded. Phase 8 hydrates the
+  // §20 launch behavior once the curriculum is ACTUALLY loaded (awaiting
+  // bootstrap here — a fire-and-forget bootstrap loses the race and the
+  // "current-lesson" launch silently no-ops). Phase 8 hydrates the
   // daily-goal defaults alongside (single boot, no extra paint blocked).
   useEffect(() => {
-    void Promise.all([hydrateSettings(), hydrateGoals()]).then(() => {
+    void Promise.all([hydrateSettings(), hydrateGoals(), bootstrap()]).then(() => {
       const { settings } = useSettingsStore.getState();
 
       // Statistics default range (§20 statistics preference).
@@ -103,7 +102,7 @@ function App() {
         );
       }
     });
-  }, [hydrateSettings, hydrateGoals]);
+  }, [hydrateSettings, hydrateGoals, bootstrap]);
 
   // §20 "last screen": persist the active screen for the launch behavior.
   useEffect(() => {
@@ -113,17 +112,20 @@ function App() {
   return (
     <Shell>
       <TopBar />
-      <Suspense
-        fallback={
-          <main className="flex w-full flex-1 items-center justify-center bg-surface">
-            <span className="animate-pulse font-code-sm text-code-sm uppercase tracking-widest text-outline">
-              Loading module…
-            </span>
-          </main>
-        }
-      >
-        <ActiveScreen />
-      </Suspense>
+      <div className="flex min-h-0 w-full flex-1 overflow-hidden">
+        <NavSidebar />
+        <Suspense
+          fallback={
+            <main className="flex w-full flex-1 items-center justify-center bg-surface">
+              <span className="animate-pulse font-code-sm text-code-sm uppercase tracking-widest text-outline">
+                Loading module…
+              </span>
+            </main>
+          }
+        >
+          <ActiveScreen />
+        </Suspense>
+      </div>
     </Shell>
   );
 }

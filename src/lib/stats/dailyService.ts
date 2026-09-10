@@ -46,15 +46,22 @@ export function computeStreak(
   const active = new Set(days);
   const isDayActive = (key: string) => active.has(key);
 
-  // Longest consecutive run anywhere in the day list.
+  // Longest consecutive run anywhere in the day list. Day keys are compared
+  // as UTC day numbers — a millisecond delta would break across DST
+  // transitions (noon-to-noon is 23h/25h there, silently resetting the run
+  // twice a year).
+  const dayIndex = (key: string): number => {
+    const [y, m, d] = key.split("-").map(Number);
+    return Date.UTC(y, m - 1, d) / 86_400_000;
+  };
   let bestRun = 0;
   let run = 0;
-  let previousMs: number | null = null;
+  let previousIndex: number | null = null;
   for (const day of [...days].sort()) {
-    const dayMs = new Date(`${day}T12:00:00`).getTime();
-    run = previousMs !== null && dayMs - previousMs === 86_400_000 ? run + 1 : 1;
+    const index = dayIndex(day);
+    run = previousIndex !== null && index - previousIndex === 1 ? run + 1 : 1;
     bestRun = Math.max(bestRun, run);
-    previousMs = dayMs;
+    previousIndex = index;
   }
 
   // Current streak: walks backward from today (or yesterday).
