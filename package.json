@@ -10,7 +10,10 @@
     "tauri": "tauri",
     "test": "vitest run",
     "perf:budget": "node scripts/perf-budget.mjs",
-    "db:generate": "drizzle-kit generate --config=drizzle-kit.config.ts"
+    "db:generate": "drizzle-kit generate --config=drizzle-kit.config.ts",
+    "build:linux": "tauri build --bundles appimage",
+    "build:windows": "tauri build --bundles nsis",
+    "build:windows:portable": "tauri build --no-bundle"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

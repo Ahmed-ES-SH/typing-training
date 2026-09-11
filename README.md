@@ -32,9 +32,19 @@ Built with **Tauri v2 (Rust) + React + TypeScript + Drizzle ORM/SQLite**.
 | ![Statistics](screens/statistics_typekernel/screen.png) | ![All lessons](screens/all_lessons_typekernel/screen.png) | ![Custom lessons](screens/custom_lessons_typekernel/screen.png) |
 | ![Settings](screens/settings_typekernel/screen.png) | | |
 
-## Install (Arch Linux)
+## Install
 
-### AppImage
+### Windows (.exe Setup Installer)
+
+1. Download the latest installer: `TypeKernel_<version>_x64-setup.exe` from GitHub Releases.
+2. Run the installer. It installs TypeKernel, creates Start Menu and desktop shortcuts, and registers in Windows Apps.
+3. Launch TypeKernel from your Start Menu or desktop.
+
+> A portable executable (`typekernel.exe`) is also available if you prefer running without installation.
+
+### Linux (Arch Linux & others)
+
+#### AppImage
 
 ```sh
 chmod +x TypeKernel_1.0.0_amd64.AppImage
@@ -44,7 +54,7 @@ chmod +x TypeKernel_1.0.0_amd64.AppImage
 Requires `gtk3` and `webkit2gtk-4.1` (present on any desktop Arch install).
 If FUSE is unavailable, run with `--appimage-extract-and-run`.
 
-### pacman package
+#### pacman package
 
 ```sh
 sudo pacman -U typekernel-bin-1.0.0-1-x86_64.pkg.tar.zst
@@ -54,30 +64,42 @@ Installs `/usr/bin/typekernel`, a desktop entry, and hicolor icons — a
 native-feel package with full pacman integration (`pacman -R` removes it
 cleanly).
 
-### AUR
+#### AUR
 
 AUR submission is planned for after 1.0 (see `packaging/aur/` for the
 scaffold and submission checklist).
 
 ## Data & privacy
 
-- All data lives under your app data dir (`$XDG_DATA_HOME` /
-  `$XDG_CONFIG_HOME`, `com.typekernel.app`) — settings, DB, backups.
-- Pre-1.0 dev installs are adopted automatically on first boot; the legacy
-  data dir is left untouched.
+- **Linux**: All data lives under your app data dir (`$XDG_DATA_HOME` /
+  `$XDG_CONFIG_HOME`, `com.typekernel.app`) — settings, DB, backups. Pre-1.0
+  Linux dev installs are adopted automatically on first boot.
+- **Windows**: All data lives under `%APPDATA%\com.typekernel.app` (`typing_trainer.db`).
 - Uninstalling leaves your data in place; the in-app reset flow wipes it.
 
 ## Build from source
 
+### Linux
 Prereqs: Node ≥ 20, pnpm, Rust (stable), `gtk3`, `webkit2gtk-4.1`, and the
 Tauri Linux prerequisites.
 
 ```sh
 pnpm install
 pnpm tauri dev        # develop
-pnpm tauri build      # → src-tauri/target/release/bundle/appimage/*.AppImage
+pnpm run build:linux  # → src-tauri/target/release/bundle/appimage/*.AppImage
 pnpm test             # TypeScript unit/integration suites
 cd src-tauri && cargo test
+```
+
+### Windows
+Prereqs: Node ≥ 20, pnpm, Rust (stable with `x86_64-pc-windows-msvc`), and Visual Studio C++ Build Tools.
+
+```powershell
+pnpm install
+pnpm tauri dev          # develop
+pnpm run build:windows  # → src-tauri/target/release/bundle/nsis/*-setup.exe
+# Or use the helper script:
+.\scripts\build-windows.ps1
 ```
 
 See [docs/release/RELEASE_CHECKLIST.md](docs/release/RELEASE_CHECKLIST.md)

@@ -1,3 +1,4 @@
+#[cfg(target_os = "linux")]
 use std::path::PathBuf;
 
 use tauri::Manager;
@@ -6,11 +7,13 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 /// Phase 9 (§3.1): the 1.0 identifier. Tauri keys the Linux app-data and
 /// app-config dirs off the identifier, so pre-1.0 dev installs live under
 /// the legacy template dirs below.
+#[cfg(target_os = "linux")]
 const NEW_IDENTIFIER: &str = "com.typekernel.app";
 
 /// Legacy identifier locations from pre-1.0 dev installs: the template
 /// default (`com.adev.typing-trainer`) plus the bare product-name dir some
 /// setups resolve to.
+#[cfg(target_os = "linux")]
 const LEGACY_IDENTIFIERS: &[&str] = &["com.adev.typing-trainer", "typing-trainer"];
 
 /// The SQLite filename is intentionally UNCHANGED across the identifier
@@ -23,6 +26,7 @@ const DB_FILES: &[&str] = &[
     "typing_trainer.db-journal",
 ];
 
+#[cfg(target_os = "linux")]
 fn base_dir(env_var: &str, home_fallback: &str) -> PathBuf {
     if let Ok(dir) = std::env::var(env_var) {
         if !dir.is_empty() {
@@ -38,6 +42,7 @@ fn base_dir(env_var: &str, home_fallback: &str) -> PathBuf {
 /// sidecars over. Runs on plain `std::fs` BEFORE the Tauri builder starts so
 /// it always wins the race against the sql plugin's migrations. Copy, not
 /// move — the legacy dir is left untouched as a fallback.
+#[cfg(target_os = "linux")]
 fn adopt_legacy_data() {
     // tauri-plugin-sql resolves `sqlite:<name>` against the app CONFIG dir;
     // webview/app state lives under the app DATA dir — cover both scopes.
@@ -75,6 +80,11 @@ fn adopt_legacy_data() {
             break;
         }
     }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn adopt_legacy_data() {
+    // Non-Linux platforms (Windows/macOS) do not have legacy Linux XDG paths.
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -168,6 +178,7 @@ mod tests {
 
     /// base_dir honors XDG env vars and falls back to $HOME subdirs.
     #[test]
+    #[cfg(target_os = "linux")]
     fn base_dir_prefers_xdg_then_home() {
         // SAFETY: single-threaded test process; env mutation is contained.
         unsafe {

@@ -28,7 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["appimage"],
+    "targets": ["appimage", "nsis"],
     "publisher": "TypeKernel",
     "homepage": "https://github.com/typekernel/typing-trainer",
     "shortDescription": "Offline coding touch-typing trainer",
@@ -42,6 +42,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "languages": ["en-US"],
+        "displayLanguageSelector": false
+      }
+    },
     "linux": {
       "appimage": {
         "bundleMediaFramework": false

@@ -21,9 +21,11 @@ pnpm tauri icon packaging/icons/typekernel.svg
 
 ## 3. Build
 
+### Linux (AppImage)
+
 ```sh
 export APPIMAGE_EXTRACT_AND_RUN=1   # needed on hosts without FUSE2
-pnpm tauri build --bundles appimage
+pnpm run build:linux
 # → src-tauri/target/release/bundle/appimage/TypeKernel_<ver>_amd64.AppImage
 ```
 
@@ -31,6 +33,15 @@ pnpm tauri build --bundles appimage
 > systems: the pinned linuxdeploy cannot strip libs with `.relr.dyn`
 > sections. Update `~/.cache/tauri/linuxdeploy-x86_64.AppImage` from
 > <https://github.com/linuxdeploy/linuxdeploy/releases> (continuous) and retry.
+
+### Windows (NSIS .exe Setup Installer)
+
+```powershell
+pnpm run build:windows
+# Or: .\scripts\build-windows.ps1
+# → src-tauri/target/release/bundle/nsis/TypeKernel_<ver>_x64-setup.exe
+# → src-tauri/target/release/typekernel.exe (portable executable)
+```
 
 ## 4. Smoke matrix (every artifact)
 
@@ -78,7 +89,8 @@ pacman -R typekernel-bin   # clean removal
 - Update `CHANGELOG.md` (keep phases 1–8 summary on top, add the new
   version section).
 - Tag: `git tag vX.Y.Z` (distribution/publishing is a separate, manual step).
-- If publishing to GitHub Releases: upload `TypeKernel_<ver>_amd64.AppImage`
-  as `TypeKernel_<ver>_amd64.AppImage` (the AUR scaffold's `source=` URL
-  pattern depends on this exact name).
+- If publishing to GitHub Releases: upload:
+  - `TypeKernel_<ver>_amd64.AppImage` (the AUR scaffold's `source=` URL pattern depends on this exact name)
+  - `TypeKernel_<ver>_x64-setup.exe` (Windows NSIS installer)
+  - `typekernel.exe` (Windows portable executable)
 - AUR (when the time comes): follow `packaging/aur/SUBMISSION_CHECKLIST.md`.
