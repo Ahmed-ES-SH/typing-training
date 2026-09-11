@@ -19,6 +19,7 @@ const LEGACY_IDENTIFIERS: &[&str] = &["com.adev.typing-trainer", "typing-trainer
 /// The SQLite filename is intentionally UNCHANGED across the identifier
 /// rename, so an adopted DB keeps working with zero migration — the
 /// versioned migrations below are idempotent and re-apply cleanly.
+#[cfg(target_os = "linux")]
 const DB_FILES: &[&str] = &[
     "typing_trainer.db",
     "typing_trainer.db-wal",
