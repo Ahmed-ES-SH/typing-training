@@ -80,7 +80,7 @@ scaffold and submission checklist).
 ## Build from source
 
 ### Linux
-Prereqs: Node ≥ 20, pnpm, Rust (stable), `gtk3`, `webkit2gtk-4.1`, and the
+Prereqs: Node ≥ 22, pnpm, Rust (stable), `gtk3`, `webkit2gtk-4.1`, and the
 Tauri Linux prerequisites.
 
 ```sh
@@ -92,7 +92,7 @@ cd src-tauri && cargo test
 ```
 
 ### Windows
-Prereqs: Node ≥ 20, pnpm, Rust (stable with `x86_64-pc-windows-msvc`), and Visual Studio C++ Build Tools.
+Prereqs: Node ≥ 22, pnpm, Rust (stable with `x86_64-pc-windows-msvc`), and Visual Studio C++ Build Tools.
 
 ```powershell
 pnpm install
