@@ -1,11 +1,13 @@
 /*
  * TypeKernel design system — Tailwind 4 CSS-first tokens.
  *
- * Translated 1:1 from the shared `tailwind.config` block found in every
- * `screens/*_typekernel/code.html` design mockup (Tailwind 3 CDN JS config).
- * Class names used in the designs (`bg-surface-container-low`, `p-space-lg`,
- * `font-code-sm`, `text-code-sm`, `rounded-xl`, ...) compile to identical CSS
- * values here.
+ * Originally translated 1:1 from the shared `tailwind.config` block found in
+ * every `screens/*_typekernel/code.html` design mockup. Phase 1 of the UI
+ * simplification plan (plans/SIMPLIFY_DESIGN_SYSTEM_PLAN.md) then remapped the
+ * global tokens: modern 6–16px radii with true pill badges, Inter for all UI
+ * chrome (JetBrains Mono only for the code buffer and telemetry numbers),
+ * soft translucent borders instead of harsh outlines, and no neon accent
+ * glows.
  *
  * Fonts are self-hosted (see @font-face below) — the app never touches a CDN.
  */
@@ -123,7 +125,7 @@
   --color-surface-container-low: #181b25;
   --color-surface-container: #1c1f29;
   --color-surface-container-high: #262a34;
-  --color-surface-container-highest: #31353f;
+  --color-surface-container-highest: rgba(255, 255, 255, 0.08);
   --color-surface-variant: #31353f;
   --color-surface-tint: #ffb690;
   --color-on-surface: #dfe2ef;
@@ -166,14 +168,15 @@
   --color-on-error-container: #ffdad6;
 
   --color-outline: #a78b7d;
-  --color-outline-variant: #584237;
+  --color-outline-variant: rgba(255, 255, 255, 0.12);
 
-  /* Border radii — note: `rounded` (bare) = 0.125rem and `rounded-full` =
-   * 0.75rem (NOT a pill), exactly like the design config. */
-  --radius: 0.125rem;
-  --radius-lg: 0.25rem;
-  --radius-xl: 0.5rem;
-  --radius-full: 0.75rem;
+  /* Border radii — modern software scale (plan §4.1): bare `rounded` = 8px,
+   * cards/buttons grow to 12–16px, and `rounded-full` is a true pill. */
+  --radius-sm: 0.375rem;
+  --radius: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-full: 9999px;
 
   /* Named spacing scale (used as p-space-lg, gap-space-sm, w-sidebar-width...) */
   --spacing-space-2xs: 0.125rem;
@@ -189,8 +192,13 @@
   --spacing-sidebar-width: 16rem;
   --spacing-terminal-drawer-collapsed: 2.5rem;
 
-  /* Font families — same key names as the design config so `font-code-sm`
-   * (family) and `text-code-sm` (size scale) both resolve. */
+  /* Font families — Phase 1 typography remap (plan §4.2): Inter is the
+   * default UI font (via --font-sans, so unstyled text inherits it too).
+   * JetBrains Mono is reserved for the code buffer / telemetry numbers
+   * (--font-code-lg), .font-mono, and <code>/<kbd>. UI labels, buttons and
+   * navigation that used to force the mono stack now resolve to Inter. */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --font-body-md: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-body-sm: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-body-lg: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -200,36 +208,36 @@
   --font-headline-xl-mobile: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display-lg: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-label-md: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-code-sm: "JetBrains Mono", ui-monospace, monospace;
-  --font-code-md: "JetBrains Mono", ui-monospace, monospace;
+  --font-code-sm: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-code-md: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-code-lg: "JetBrains Mono", ui-monospace, monospace;
-  --font-label-sm: "JetBrains Mono", ui-monospace, monospace;
+  --font-label-sm: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  /* Type scale — size / line-height / letter-spacing / weight exactly as the
-   * design config's `fontSize` entries. */
+  /* Type scale — size / line-height / weight from the design config; negative
+   * letter-spacing removed (plan §4.2) for a clean, neutral modern rhythm. */
   --text-display-lg: 40px;
   --text-display-lg--line-height: 48px;
-  --text-display-lg--letter-spacing: -0.025em;
+  --text-display-lg--letter-spacing: 0em;
   --text-display-lg--font-weight: 700;
 
   --text-headline-xl: 32px;
   --text-headline-xl--line-height: 40px;
-  --text-headline-xl--letter-spacing: -0.02em;
+  --text-headline-xl--letter-spacing: 0em;
   --text-headline-xl--font-weight: 700;
 
   --text-headline-xl-mobile: 26px;
   --text-headline-xl-mobile--line-height: 34px;
-  --text-headline-xl-mobile--letter-spacing: -0.015em;
+  --text-headline-xl-mobile--letter-spacing: 0em;
   --text-headline-xl-mobile--font-weight: 700;
 
   --text-headline-lg: 24px;
   --text-headline-lg--line-height: 32px;
-  --text-headline-lg--letter-spacing: -0.015em;
+  --text-headline-lg--letter-spacing: 0em;
   --text-headline-lg--font-weight: 600;
 
   --text-headline-md: 18px;
   --text-headline-md--line-height: 26px;
-  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--letter-spacing: 0em;
   --text-headline-md--font-weight: 600;
 
   --text-body-lg: 16px;
@@ -294,7 +302,7 @@
     overscroll-behavior: none;
   }
 
-  /* Thin terminal-style scrollbar, per the designs */
+  /* Slim modern scrollbar (soft translucent thumb, pill caps) */
   ::-webkit-scrollbar {
     width: 5px;
     height: 5px;
@@ -303,34 +311,39 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #31353f;
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #584237;
+    background: rgba(255, 255, 255, 0.28);
   }
 
   /* Phase 8 keyboard-navigation polish (§3.5): every interactive element
    * gets a visible on-palette focus ring. Mouse users are unaffected
-   * (:focus-visible only fires for keyboard focus). */
+   * (:focus-visible only fires for keyboard focus). The outline follows each
+   * element's own (now modern) border-radius. */
   :where(a, button, input, select, textarea, [tabindex]):focus-visible {
     outline: 2px solid var(--color-primary-container);
     outline-offset: 2px;
-    border-radius: 2px;
   }
 }
 
+/* Phase 1 (plan §4.2): UI chrome is sentence case, not terminal all-caps, and
+ * headlines use neutral letter-spacing. Neutralizing the two utilities here
+ * delivers that app-wide without rewriting component markup. */
+.uppercase {
+  text-transform: none;
+}
+.tracking-tight {
+  letter-spacing: 0em;
+}
+
 /* ---------------------------------------------------------------------------
- * Phase 7 — theme variants, accent intensity, reduce motion (§20)
+ * Theme variants, reduce motion (§20)
  *
  * Tokens are CSS vars (see @theme above), so each design theme is a scoped
- * variable override applied on <html> by the settings store. `--accent-alpha`
- * scales the accent glow shadows (1.0 = the design's 70% default).
+ * variable override applied on <html> by the settings store.
  * ------------------------------------------------------------------------- */
-
-:root {
-  --accent-alpha: 1;
-}
 
 /* Terminal Mono — monochrome surfaces, phosphor-green accent. */
 html.theme-terminal-mono {
@@ -471,6 +484,6 @@ html[data-motion="reduced"] *::after {
   }
 }
 
-/* Accent glow shadows key off the accent-intensity slider (§20). The design
- * glow literals translate to `rgb(249 115 22 / calc(<a> * var(--accent-alpha)))`
- * with --accent-alpha defaulting to 1 at the design's 70% intensity. */
+/* Neon accent glow shadows were eliminated in Phase 1: components now use
+ * flat surfaces with modern subtle drop shadows (shadow-sm / shadow-md)
+ * instead of `0 0 12px` orange halos keyed off the old --accent-alpha var. */

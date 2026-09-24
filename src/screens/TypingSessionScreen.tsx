@@ -3,9 +3,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { lessonsByLevel, getLevelMeta } from "../content";
 import { KeyboardVisualization } from "../components/KeyboardVisualization";
 import { KeyHeatmapCompact } from "../components/KeyHeatmapCompact";
+import { StatusPill } from "../components/StatusPill";
 import { findTargetKey, FINGERS, getActiveLayout } from "../lib/layout";
 import { getCharAccuracy, type CharAccuracy } from "../lib/intelligence/heatmap";
 import { fmt1, fmtClock, moduleNumber } from "../lib/format";
+import { WPM_GATE } from "../lib/curriculum/rules";
 import { liveMetrics } from "../lib/engine/metrics";
 import type { SessionState } from "../lib/engine/types";
 import type { Lesson } from "../lib/schemas";
@@ -21,7 +23,7 @@ import { useUiStore } from "../stores/useUiStore";
  * (design `code.html`): module sidebar, full-focus code buffer with per-char
  * evaluation, live telemetry strip and on-screen keyboard.
  *
- * Sidebar module states (✓ completed / RUNNING / next / 🔒 locked) come from
+ * Sidebar module states (✓ completed / running / next / 🔒 locked) come from
  * the real curriculum + `lesson_progress` rows (Phase 4). The lesson is
  * selected through navigation params; finishing routes to the Results screen.
  */
@@ -68,9 +70,8 @@ function ModuleCard({ lesson, state, progress, onSelect }: {
 
   if (state === "running") {
     return (
-      <div className="relative overflow-hidden rounded-lg border border-primary-container/40 bg-surface-container-high p-space-sm shadow-lg ring-1 ring-primary-container/30">
-        <div className="absolute bottom-0 left-0 top-0 w-1.5 bg-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(0.9_*_var(--accent-alpha)))]" />
-        <div className="mb-1 flex items-center justify-between pl-1">
+      <div className="rounded-lg border border-surface-container-highest/40 bg-surface-container-high p-space-sm shadow-sm">
+        <div className="mb-1 flex items-center justify-between">
           <div className="flex items-center gap-space-xs">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
@@ -80,14 +81,12 @@ function ModuleCard({ lesson, state, progress, onSelect }: {
               {num} {lesson.title}
             </span>
           </div>
-          <span className="rounded bg-primary-container px-1.5 py-0.5 font-label-sm text-label-sm font-bold uppercase tracking-wider text-on-primary-container">
-            RUNNING
-          </span>
+          <StatusPill tone="inProgress">In progress</StatusPill>
         </div>
-        <div className="flex items-center justify-between pl-3.5 font-code-sm text-code-sm text-on-surface-variant">
+        <div className="flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant">
           <span className="text-primary-fixed">{tokens}</span>
           {progress && progress.bestWpm > 0 && (
-            <span className="font-semibold text-on-surface">PR: {fmt1(progress.bestWpm)} WPM</span>
+            <span className="font-semibold text-on-surface">Best: {fmt1(progress.bestWpm)} WPM</span>
           )}
         </div>
       </div>
@@ -141,9 +140,7 @@ function ModuleCard({ lesson, state, progress, onSelect }: {
               {num} {lesson.title}
             </span>
           </div>
-          <span className="rounded bg-surface-container-lowest px-1.5 py-0.5 font-code-sm text-code-sm text-on-surface-variant">
-            NEXT
-          </span>
+          <StatusPill tone="available">Next</StatusPill>
         </div>
         <div className="flex items-center justify-between pl-6 font-code-sm text-code-sm text-on-surface-variant">
           <span className="text-outline">{tokens}</span>
@@ -163,7 +160,7 @@ function ModuleCard({ lesson, state, progress, onSelect }: {
             {num} {lesson.title}
           </span>
         </div>
-        <span className="font-label-sm text-label-sm text-outline">LOCKED</span>
+        <StatusPill tone="locked">Locked</StatusPill>
       </div>
       <div className="pl-6 font-code-sm text-code-sm text-outline">{tokens}</div>
     </div>
@@ -218,7 +215,7 @@ function ModuleSidebar({
         <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-primary-container/15 blur-2xl" />
         <div className="mb-1.5 flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant">
           <span className="font-bold tracking-wider text-primary">
-            TRACK {String(level).padStart(2, "0")} // LEVEL {String(level).padStart(2, "0")}
+            Level {level}
           </span>
           <span className="rounded bg-surface-container px-space-xs py-0.5 font-code-sm font-bold text-primary">
             {completed}/{levelLessons.length}
@@ -240,13 +237,13 @@ function ModuleSidebar({
             {levelLessons.length ? Math.round((completed / levelLessons.length) * 100) : 0}% Completed
           </span>
           <span className="font-medium text-primary-container">
-            {levelLessons.length - completed} Modules Remaining
+            {levelLessons.length - completed} lessons remaining
           </span>
         </div>
       </div>
 
       {/* Filter tabs */}
-      <div className="flex flex-col gap-1.5 border-b border-surface-container-highest/30 bg-surface-container-lowest/40 p-space-xs">
+      <div className="flex flex-col gap-1.5 border-b border-white/5 bg-surface-container-lowest/40 p-space-xs">
         <div className="flex items-center gap-1 rounded-lg bg-surface-container-lowest p-1 font-label-sm text-label-sm text-on-surface-variant">
           <button
             type="button"
@@ -328,10 +325,12 @@ interface DisplayLine {
   offset: number;
 }
 
-function CodeBuffer({ lesson, engineState, running }: {
+function CodeBuffer({ lesson, engineState, running, bestWpm }: {
   lesson: Lesson | null;
   engineState: SessionState;
   running: boolean;
+  /** Personal best for this lesson (0 = none yet) — shown as the target hint. */
+  bestWpm: number;
 }) {
   const activeLineRef = useRef<HTMLDivElement | null>(null);
 
@@ -359,31 +358,25 @@ function CodeBuffer({ lesson, engineState, running }: {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-surface-container-highest/40 bg-surface-container-lowest shadow-2xl">
-      {/* Editor sub-header */}
-      <div className="flex shrink-0 items-center justify-between border-b border-surface-container-highest/40 bg-surface-container-low px-space-base py-1.5">
-        <div className="flex items-center gap-space-sm">
-          <div className="flex items-center gap-2 rounded-t-md border-t-2 border-primary-container bg-surface-container-lowest px-space-sm py-1 font-code-sm text-code-sm font-semibold text-primary">
-            <span className="material-symbols-outlined text-[15px] text-primary-container">data_object</span>
-            <span>{lesson ? `${lesson.id}.txt` : "module.txt"}</span>
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary-container" />
-          </div>
-          <div className="hidden items-center gap-1 px-2 font-code-sm text-code-sm text-on-surface-variant sm:flex">
-            <span>{lesson ? lesson.title : "no module selected"}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-space-md font-code-sm text-code-sm text-on-surface-variant">
-          <span className="hidden rounded bg-surface-container px-2 py-0.5 text-primary-fixed md:inline">
-            LEVEL {String(lesson?.level ?? 0).padStart(2, "0")} //{" "}
-            {getLevelMeta(lesson?.level ?? 1)?.tagline ?? "IDLE"}
+      {/* Editor header — lesson title + subtle target hint */}
+      <div className="flex shrink-0 items-center justify-between gap-space-sm border-b border-white/5 bg-surface-container-low px-space-base py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="material-symbols-outlined shrink-0 text-[16px] text-primary">description</span>
+          <span className="truncate font-label-md text-label-md font-semibold text-on-surface">
+            {lesson
+              ? `Lesson ${moduleNumber(lesson.level, lesson.orderIndex)} — ${lesson.title}`
+              : "No lesson selected"}
           </span>
-          <span className="hidden sm:inline">UTF-8</span>
-          <div className="flex items-center gap-1 text-on-surface">
-            <span className="material-symbols-outlined text-[14px] text-primary">pin_drop</span>
-            <span>
-              Ln {activeLine + 1}, Col{" "}
-              {Math.max(1, engineState.position - (lines[activeLine]?.offset ?? 0) + 1)}
-            </span>
-          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-space-sm font-label-sm text-label-sm text-on-surface-variant">
+          <span className="hidden sm:inline">
+            Level {lesson?.level ?? 1} • {getLevelMeta(lesson?.level ?? 1)?.tagline ?? "Ready"}
+          </span>
+          <span className="rounded-full bg-surface-container-high px-2.5 py-0.5 text-xs font-medium text-primary">
+            {bestWpm > 0
+              ? `Best ${fmt1(bestWpm)} WPM`
+              : `Target > ${WPM_GATE} WPM`}
+          </span>
         </div>
       </div>
 
@@ -398,12 +391,9 @@ function CodeBuffer({ lesson, engineState, running }: {
               key={lineIndex}
               ref={isActive ? activeLineRef : undefined}
               className={`flex items-center rounded-md ${
-                isActive ? "relative -mx-1 bg-surface-container-high/60 px-1 py-1 shadow-inner" : ""
+                isActive ? "-mx-1 bg-surface-container-high/60 px-1 py-1 shadow-inner" : ""
               }`}
             >
-              {isActive && (
-                <div className="absolute bottom-0 left-0 top-0 w-1.5 rounded-l bg-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(0.8_*_var(--accent-alpha)))]" />
-              )}
               <span
                 className={`w-12 select-none pr-5 text-right font-code-sm text-code-sm ${
                   isActive ? "font-bold text-primary" : "text-outline-variant"
@@ -431,7 +421,7 @@ function CodeBuffer({ lesson, engineState, running }: {
                     return (
                       <span key={globalIndex} className="relative inline-block">
                         {isCurrent && (
-                          <span className="absolute -left-0.5 top-1/2 h-7 w-0.5 -translate-y-1/2 animate-pulse bg-primary shadow-[0_0_8px_rgb(249_115_22_calc(1_*_var(--accent-alpha)))]" />
+                          <span className="absolute -left-0.5 top-1/2 h-7 w-0.5 -translate-y-1/2 animate-pulse bg-primary" />
                         )}
                         <span
                           className={
@@ -451,7 +441,7 @@ function CodeBuffer({ lesson, engineState, running }: {
                   })
                 )}
                 {caretAtLineEnd && (
-                  <span className="ml-0.5 inline-block h-7 w-2.5 animate-pulse bg-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(1_*_var(--accent-alpha)))]" />
+                  <span className="ml-0.5 inline-block h-7 w-2.5 animate-pulse bg-primary-container" />
                 )}
               </span>
             </div>
@@ -600,58 +590,31 @@ export default function TypingSessionScreen() {
                 <span className="font-headline-xl text-headline-xl font-bold tracking-tight text-primary">
                   {metrics ? fmt1(metrics.wpm) : "0.0"}
                 </span>
-                <span className="font-code-sm text-code-sm text-primary">WPM</span>
+                <span className="font-label-sm text-label-sm text-on-surface-variant">WPM</span>
               </div>
-              <div className="h-8 w-px bg-surface-container-highest" />
+              <div className="h-6 w-px bg-white/10" />
               {/* Accuracy */}
-              <div className="flex items-baseline gap-1">
+              <div className="flex items-baseline gap-1.5">
                 <span className="font-headline-xl text-headline-xl font-bold tracking-tight text-on-surface">
                   {metrics ? fmt1(metrics.accuracy) : "100.0"}
                 </span>
-                <span className="font-code-sm text-code-sm text-on-surface-variant">%</span>
-                <span className="font-code-sm text-code-sm text-on-surface-variant">ACC</span>
+                <span className="font-label-sm text-label-sm text-on-surface-variant">Accuracy %</span>
               </div>
-              <div className="hidden h-8 w-px bg-surface-container-highest sm:block" />
-              {/* Errors */}
-              <div className="flex items-center gap-space-xs">
-                <span className="rounded bg-error-container px-2 py-0.5 font-code-sm text-code-sm font-bold text-error">
-                  {metrics ? metrics.incorrectChars : 0} ERR
+              <div className="h-6 w-px bg-white/10" />
+              {/* Progress */}
+              <div className="flex items-baseline gap-1.5">
+                <span className="font-headline-xl text-headline-xl font-bold tracking-tight text-on-surface">
+                  {metrics ? Math.round(metrics.progressPct) : 0}
                 </span>
-                <span className="rounded bg-surface-container px-2 py-0.5 font-code-sm text-code-sm text-on-surface-variant">
-                  {metrics ? fmt1(metrics.errorRate) : "0.0"}% RATE
-                </span>
+                <span className="font-label-sm text-label-sm text-on-surface-variant">Progress %</span>
               </div>
-              <div className="hidden h-8 w-px bg-surface-container-highest md:block" />
-              {/* Chars */}
-              <div className="flex flex-col">
-                <span className="font-code-sm text-code-sm uppercase tracking-wider text-on-surface-variant">
-                  Chars
-                </span>
-                <div className="mt-0.5 flex items-baseline gap-1 font-code-lg text-code-lg font-bold text-secondary">
-                  {metrics ? metrics.totalChars : 0}
-                  <span className="font-code-sm text-code-sm font-normal text-on-surface-variant">
-                    ({metrics ? metrics.correctChars : 0} ok / {metrics ? metrics.incorrectChars : 0} bad)
-                  </span>
-                </div>
-              </div>
-              <div className="hidden h-8 w-px bg-surface-container-highest md:block" />
-              {/* Fix-ups */}
-              <div className="hidden flex-col md:flex">
-                <span className="font-code-sm text-code-sm uppercase tracking-wider text-on-surface-variant">
-                  Fix-Ups
-                </span>
-                <div className="mt-0.5 flex items-baseline gap-1">
-                  <span className="font-code-lg text-code-lg font-bold text-secondary">
-                    {metrics ? metrics.backspaceCount : 0}
-                  </span>
-                  <span className="font-code-sm text-code-sm text-on-surface-variant">backspaces</span>
-                </div>
-              </div>
-              <div className="h-8 w-px bg-surface-container-highest" />
+              <div className="h-6 w-px bg-white/10" />
               {/* Elapsed */}
-              <div className="flex items-center gap-1 font-code-lg text-code-lg font-semibold text-on-surface">
+              <div className="flex items-center gap-1 text-on-surface-variant">
                 <span className="material-symbols-outlined text-[16px] text-primary">timer</span>
-                <span>{metrics ? fmtClock(metrics.elapsedMs) : "00:00"}</span>
+                <span className="font-label-md text-label-md font-medium">
+                  {metrics ? fmtClock(metrics.elapsedMs) : "00:00"}
+                </span>
               </div>
             </div>
 
@@ -660,7 +623,7 @@ export default function TypingSessionScreen() {
                 type="button"
                 onClick={() => lesson && void startLesson(lesson)}
                 className="flex items-center gap-1 rounded-lg border border-surface-container-highest/40 bg-surface-container px-3 py-1.5 font-label-md text-label-md text-on-surface transition-colors hover:bg-surface-container-high"
-                title="Restart Buffer"
+                title="Restart lesson"
               >
                 <span className="material-symbols-outlined text-[16px]">refresh</span>
                 <span>Reset</span>
@@ -672,58 +635,53 @@ export default function TypingSessionScreen() {
             <div className="flex items-center justify-between gap-2 rounded border border-error/40 bg-error-container/40 px-space-sm py-1 font-code-sm text-code-sm text-error">
               <span className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[14px]">error</span>
-                SAVE FAILED: {persistError}
+                Save failed: {persistError}
               </span>
               <button
                 type="button"
                 onClick={() => void retryPersist()}
                 className="rounded bg-surface-container px-2 py-0.5 font-bold text-on-surface hover:bg-surface-container-high"
               >
-                RETRY SAVE
+                Retry save
               </button>
             </div>
           )}
 
-          {/* Buffer progress */}
+          {/* Progress bar */}
           <div className="flex flex-col gap-1">
             <div className="relative h-2 w-full overflow-hidden rounded-full border border-surface-container-highest/30 bg-surface-container-lowest">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-secondary-container via-primary-container to-primary shadow-[0_0_8px_rgb(249_115_22_calc(0.6_*_var(--accent-alpha)))] transition-all duration-300"
+                className="h-full rounded-full bg-gradient-to-r from-secondary-container via-primary-container to-primary transition-all duration-300"
                 style={{ width: `${metrics ? Math.min(100, metrics.progressPct) : 0}%` }}
               />
             </div>
-            <div className="flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant">
+            <div className="flex items-center justify-between font-label-sm text-label-sm text-on-surface-variant">
               <span>
-                Buffer Progress: {engineState?.position ?? 0} of{" "}
-                {engineState?.entries.length ?? 0} chars committed
+                {engineState?.position ?? 0} of {engineState?.entries.length ?? 0} characters
               </span>
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-outline">
-                  Stream Speed:{" "}
-                  {metrics && metrics.elapsedMs > 0
-                    ? Math.round((metrics.totalChars / metrics.elapsedMs) * 60_000)
-                    : 0}{" "}
-                  CPM
-                </span>
-                <span className="font-bold text-primary">
-                  {metrics ? Math.round(metrics.progressPct) : 0}% Finished
-                </span>
-              </div>
+              <span className="font-semibold text-primary">
+                {metrics ? Math.round(metrics.progressPct) : 0}%
+              </span>
             </div>
           </div>
         </div>
 
         {/* Code buffer */}
         {engineState !== null ? (
-          <CodeBuffer lesson={lesson} engineState={engineState} running={running} />
+          <CodeBuffer
+            lesson={lesson}
+            engineState={engineState}
+            running={running}
+            bestWpm={lesson ? progress[lesson.id]?.bestWpm ?? 0 : 0}
+          />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-surface-container-highest/40 bg-surface-container-lowest shadow-2xl">
             <span className="material-symbols-outlined text-[36px] text-outline">keyboard</span>
             <p className="mt-2 font-headline-md text-headline-md text-on-surface">
-              No module loaded
+              No lesson loaded
             </p>
             <p className="mt-1 max-w-sm text-center font-body-sm text-body-sm text-on-surface-variant">
-              Pick an available module from the sidebar (or the Lessons
+              Pick an available lesson from the sidebar (or the Lessons
               screen) to start a typing session.
             </p>
           </div>
@@ -731,28 +689,30 @@ export default function TypingSessionScreen() {
 
         {/* Keyboard visualization + status strip */}
         <div className="flex shrink-0 select-none flex-col gap-2 rounded-xl border border-surface-container-highest/40 bg-surface-container-low/95 p-3 shadow-inner">
-          <div className="flex items-center justify-between px-1 font-code-sm text-[11px]">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 font-label-sm text-label-sm">
             <span className="flex items-center gap-2 font-semibold text-primary">
-              <span className="material-symbols-outlined text-[14px] text-primary-container">keyboard</span>
-              <span>60% MECH PROGRAMMER DECK</span>
+              <span className="material-symbols-outlined text-[16px] text-primary-container">keyboard</span>
+              <span>Keyboard Guide</span>
             </span>
-            <span className="flex items-center gap-1 text-[10px] text-on-surface-variant">
-              <span className="h-2 w-2 rounded bg-primary-container shadow-[0_0_8px_rgb(249_115_22_calc(0.8_*_var(--accent-alpha)))]" />
-              <span>
-                Active Sequence Keys:{" "}
-                {Array.from(upcoming).map((char, i) => (
-                  <strong key={i} className="text-primary">
-                    [{char === "\n" ? "\\n" : char}]
-                    {i === 0 && upcoming.length > 1 ? " then " : " "}
-                  </strong>
-                ))}
+            <span className="flex flex-wrap items-center gap-2 text-on-surface-variant">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-primary-container" />
+                <span>
+                  Next key:{" "}
+                  {Array.from(upcoming).map((char, i) => (
+                    <strong key={i} className="font-mono text-primary">
+                      [{char === "\n" ? "\\n" : char}]
+                      {i < upcoming.length - 1 ? " " : ""}
+                    </strong>
+                  ))}
+                </span>
               </span>
               {nextFinger !== null && (
                 <span className="hidden items-center gap-1 text-outline sm:flex">
-                  <span className="material-symbols-outlined text-[12px] text-primary">pan_tool</span>
+                  <span className="material-symbols-outlined text-[14px] text-primary">pan_tool</span>
                   <span>
                     {nextFinger.label}
-                    {nextTarget?.requiresShift === true ? " + SHIFT" : ""}
+                    {nextTarget?.requiresShift === true ? " + Shift" : ""}
                   </span>
                 </span>
               )}
@@ -771,14 +731,14 @@ export default function TypingSessionScreen() {
                 title="Toggle key heatmap (30-day accuracy)"
               >
                 <span className="material-symbols-outlined text-[12px]">grid_on</span>
-                <span>HEATMAP</span>
+                <span>Heatmap</span>
               </button>
             </span>
           </div>
           {heatmapVisible && (
             <div className="rounded-lg border border-surface-container-highest/30 bg-surface-container-lowest/60 p-2">
-              <p className="mb-1 text-center font-code-sm text-[9px] uppercase tracking-widest text-outline">
-                Key Heatmap // 30-Day Accuracy (weak keys highlighted)
+              <p className="mb-1 text-center font-label-sm text-label-sm text-outline">
+                Key heatmap: 30-day accuracy (weak keys highlighted)
               </p>
               <KeyHeatmapCompact data={heatmapData} />
             </div>
@@ -796,39 +756,39 @@ export default function TypingSessionScreen() {
           <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl bg-surface/85 backdrop-blur-sm">
             <div className="w-96 rounded-xl border border-primary-container/40 bg-surface-container-low p-space-lg shadow-2xl">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="font-headline-md text-headline-md text-on-surface">SESSION COMPLETE</h3>
+                <h3 className="font-headline-md text-headline-md text-on-surface">Lesson Complete</h3>
                 {persistError === null ? (
                   <span className="flex items-center gap-1 rounded bg-surface-container-high px-2 py-0.5 font-code-sm text-code-sm font-bold text-primary">
                     <span className="material-symbols-outlined text-[14px] text-primary">check_circle</span>
-                    SAVED
+                    Saved to history
                   </span>
                 ) : (
                   <span className="rounded bg-error-container px-2 py-0.5 font-code-sm text-code-sm font-bold text-error">
-                    NOT SAVED
+                    Save failed
                   </span>
                 )}
               </div>
               <div className="mb-4 grid grid-cols-2 gap-space-sm font-code-md text-code-md">
                 <div className="rounded-lg bg-surface-container-lowest p-space-sm">
-                  <div className="font-code-sm text-code-sm text-on-surface-variant">GROSS WPM</div>
+                  <div className="font-code-sm text-code-sm text-on-surface-variant">WPM</div>
                   <div className="font-headline-lg text-headline-lg font-bold text-primary">
                     {fmt1(summary.wpm)}
                   </div>
                 </div>
                 <div className="rounded-lg bg-surface-container-lowest p-space-sm">
-                  <div className="font-code-sm text-code-sm text-on-surface-variant">ACCURACY</div>
+                  <div className="font-label-sm text-label-sm text-on-surface-variant">Accuracy</div>
                   <div className="font-headline-lg text-headline-lg font-bold text-on-surface">
                     {fmt1(summary.accuracy)}%
                   </div>
                 </div>
                 <div className="rounded-lg bg-surface-container-lowest p-space-sm">
-                  <div className="font-code-sm text-code-sm text-on-surface-variant">DURATION</div>
+                  <div className="font-label-sm text-label-sm text-on-surface-variant">Duration</div>
                   <div className="font-code-lg text-code-lg font-semibold text-on-surface">
                     {fmtClock(summary.durationMs)}
                   </div>
                 </div>
                 <div className="rounded-lg bg-surface-container-lowest p-space-sm">
-                  <div className="font-code-sm text-code-sm text-on-surface-variant">ERRORS / FIX-UPS</div>
+                  <div className="font-code-sm text-code-sm text-on-surface-variant">Errors / Fix-ups</div>
                   <div className="font-code-lg text-code-lg font-semibold text-on-surface">
                     {summary.errorCount} / {summary.backspaceCount}
                   </div>
@@ -840,16 +800,16 @@ export default function TypingSessionScreen() {
                   onClick={() => void retryPersist()}
                   className="mb-2 w-full rounded-lg border border-error/40 bg-error-container/40 px-space-sm py-2 font-label-md text-label-md text-error hover:bg-error-container/60"
                 >
-                  RETRY SAVE
+                  Retry save
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => lesson && void startLesson(lesson)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary-container py-2 font-label-md text-label-md font-bold text-on-primary-container shadow-[0_0_14px_rgb(249_115_22_calc(0.4_*_var(--accent-alpha)))] transition-all hover:bg-tertiary-container"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary-container py-2 font-label-md text-label-md font-bold text-on-primary-container shadow-md transition-all hover:bg-tertiary-container"
               >
                 <span className="material-symbols-outlined text-[16px]">refresh</span>
-                <span>RETRY LESSON</span>
+                <span>Retry Lesson</span>
               </button>
             </div>
           </div>

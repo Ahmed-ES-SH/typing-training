@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 
 /**
- * StatCard — the hero aggregate chips shared by the Dashboard's rolling
- * stats strip and the Statistics screen's header row (design: icon + small
- * uppercase label, bold value, muted note).
+ * StatCard — the flat metric cards shared by the Dashboard's rolling stats
+ * strip and the Statistics screen's header row (plan §7.3: flat container,
+ * clean number typography, subtle muted labels).
  */
 export function StatCard({
   icon,
@@ -27,12 +27,12 @@ export function StatCard({
   return (
     <div
       className={cn(
-        "flex flex-col gap-0.5 rounded-xl border border-surface-container-highest/40 bg-surface-container-lowest/60 px-space-base py-space-sm shadow-md",
+        "flex flex-col gap-1 rounded-xl border border-white/5 bg-surface-container-low/60 p-4",
         className,
       )}
     >
-      <span className="flex items-center gap-1.5 font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
-        <span className="material-symbols-outlined text-[14px] text-primary-container">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-on-surface-variant">
+        <span className="material-symbols-outlined text-[16px] text-primary-container">
           {icon}
         </span>
         {label}
@@ -42,12 +42,12 @@ export function StatCard({
           {value}
         </span>
         {unit && (
-          <span className="font-code-sm text-code-sm text-on-surface-variant">{unit}</span>
+          <span className="text-xs text-on-surface-variant">{unit}</span>
         )}
         {note && (
           <span
             className={cn(
-              "font-code-sm text-[11px] font-semibold",
+              "text-xs font-medium",
               noteTone === "positive" && "text-primary",
               noteTone === "negative" && "text-error",
               noteTone === "muted" && "text-on-surface-variant",

@@ -10,6 +10,7 @@ import { ACCURACY_GATE } from "../lib/curriculum/rules";
 import { fmt1, moduleNumber } from "../lib/format";
 import type { KeyStatRow, Lesson, LessonProgress } from "../lib/schemas";
 import { cn } from "../lib/cn";
+import { StatusPill } from "../components/StatusPill";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { lessonStatus, useCurriculumStore } from "../stores/useCurriculumStore";
 
@@ -92,28 +93,28 @@ function MasteryGauge({
           <span className="font-headline-md text-headline-md leading-none text-on-surface">
             {fmt1(pct)}%
           </span>
-          <span className="mt-1 font-code-sm text-[10px] uppercase text-on-surface-variant">
+          <span className="mt-1 text-[10px] font-medium text-on-surface-variant">
             Overall
           </span>
         </div>
       </div>
       <div className="flex flex-col">
-        <span className="font-code-sm font-bold uppercase tracking-wider text-primary">
+        <span className="text-xs font-semibold text-primary">
           {activeLevel !== null
-            ? `Tier ${activeLevel} Qualified`
+            ? `Level ${activeLevel} in progress`
             : completed === total
-              ? "Curriculum Cleared"
-              : "No Progress Yet"}
+              ? "Curriculum cleared"
+              : "No progress yet"}
         </span>
         <span className="mt-0.5 font-body-md font-medium text-on-surface">
           {completed} / {total} Mastered
         </span>
         <span className="mt-1 font-body-sm text-on-surface-variant">
-          {Math.max(0, total - completed)} modules remaining
+          {Math.max(0, total - completed)} lessons remaining
         </span>
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-container-lowest">
           <div
-            className="h-full rounded-full bg-primary-container shadow-[0_0_8px_rgb(249_115_22_calc(0.8_*_var(--accent-alpha)))]"
+            className="h-full rounded-full bg-primary-container"
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -142,27 +143,25 @@ function HeroBanner({
       <div className="relative z-10 flex flex-col justify-between gap-space-lg lg:flex-row lg:items-center">
         <div className="max-w-2xl">
           <div className="mb-space-xs flex items-center gap-space-xs">
-            <span className="inline-flex items-center gap-1.5 rounded bg-surface-container-high px-space-xs py-space-2xs font-code-sm uppercase tracking-wider text-primary">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary-container" />
-              SYLLABUS ARCHITECTURE // V2.4
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/5 bg-surface-container-high px-2.5 py-0.5 text-xs font-medium text-primary">
+              Complete curriculum
             </span>
-            <span className="font-code-sm text-code-sm text-on-surface-variant">
-              • DETERMINISTIC MOTOR PATHWAYS
+            <span className="text-xs text-on-surface-variant">
+              • {TOTAL_LESSONS} lessons
             </span>
           </div>
           <h1 className="font-display-lg text-display-lg tracking-tight text-on-surface">
-            Curriculum &amp; Syllabus Directory
+            Curriculum
           </h1>
           <p className="mt-space-xs max-w-xl font-body-md text-body-md text-on-surface-variant">
-            Master {TOTAL_LESSONS} deterministic neuromuscular modules from
-            low-level home-row cadence to bare-metal kernel abstractions and
-            multithreaded syntax conduits.
+            Master {TOTAL_LESSONS} lessons from home-row basics to full-code
+            fluency — build speed and accuracy one level at a time.
           </p>
           <div className="mt-space-base flex flex-wrap items-center gap-space-md">
             <div className="flex items-center gap-space-xs rounded bg-surface-container px-space-sm py-space-xs">
               <span className="material-symbols-outlined text-[18px] text-primary">speed</span>
               <div className="flex flex-col">
-                <span className="font-code-sm text-code-sm uppercase text-on-surface-variant">
+                <span className="text-xs font-medium text-on-surface-variant">
                   Rolling Speed
                 </span>
                 <span className="font-code-sm font-semibold text-code-sm text-on-surface">
@@ -173,7 +172,7 @@ function HeroBanner({
             <div className="flex items-center gap-space-xs rounded bg-surface-container px-space-sm py-space-xs">
               <span className="material-symbols-outlined text-[18px] text-secondary">verified</span>
               <div className="flex flex-col">
-                <span className="font-code-sm text-code-sm uppercase text-on-surface-variant">
+                <span className="text-xs font-medium text-on-surface-variant">
                   Code Accuracy
                 </span>
                 <span className="font-code-sm font-semibold text-code-sm text-on-surface">
@@ -184,7 +183,7 @@ function HeroBanner({
             <div className="flex items-center gap-space-xs rounded bg-surface-container px-space-sm py-space-xs">
               <span className="material-symbols-outlined text-[18px] text-primary-container">radar</span>
               <div className="flex flex-col">
-                <span className="font-code-sm text-code-sm uppercase text-on-surface-variant">
+                <span className="text-xs font-medium text-on-surface-variant">
                   Target Focus
                 </span>
                 <span className="font-code-sm font-medium text-primary">{focusLabel}</span>
@@ -243,28 +242,27 @@ function ModuleCard({
               : "text-on-surface-variant",
         )}
       >
-        MODULE {moduleNo}
-        {status === "active" ? " // ACTIVE" : ""}
+        Lesson {moduleNo}
       </span>
       {status === "completed" && (
-        <span className="inline-flex items-center gap-1 rounded bg-surface-container-high px-1.5 py-0.5 font-code-sm text-[10px] font-semibold text-secondary">
-          <span className="material-symbols-outlined text-[12px]">check_circle</span> MASTERED
-        </span>
+        <StatusPill tone="mastered">
+          <span className="material-symbols-outlined text-[12px]">check_circle</span> Mastered
+        </StatusPill>
       )}
       {status === "active" && (
-        <span className="inline-flex items-center gap-1 rounded bg-primary-container px-2 py-0.5 font-code-sm text-[10px] font-bold text-on-primary-container shadow-sm">
-          <span className="h-1.5 w-1.5 animate-ping rounded-full bg-on-primary-container" /> IN PROGRESS
-        </span>
+        <StatusPill tone="inProgress">
+          <span className="h-1.5 w-1.5 animate-ping rounded-full bg-current" /> In progress
+        </StatusPill>
       )}
       {status === "available" && (
-        <span className="inline-flex items-center gap-1 rounded bg-surface-container-high px-1.5 py-0.5 font-code-sm text-[10px] font-semibold text-primary">
-          <span className="material-symbols-outlined text-[12px]">lock_open</span> READY
-        </span>
+        <StatusPill tone="available">
+          <span className="material-symbols-outlined text-[12px]">lock_open</span> Ready
+        </StatusPill>
       )}
       {status === "locked" && (
-        <span className="inline-flex items-center gap-1 rounded bg-surface-container-lowest px-1.5 py-0.5 font-code-sm text-[10px] text-on-surface-variant/60">
-          <span className="material-symbols-outlined text-[12px]">lock</span> LOCKED
-        </span>
+        <StatusPill tone="locked">
+          <span className="material-symbols-outlined text-[12px]">lock</span> Locked
+        </StatusPill>
       )}
     </div>
   );
@@ -298,39 +296,39 @@ function ModuleCard({
       {status === "completed" && progress && (
         <div className="flex items-center justify-between py-space-xs font-code-sm text-code-sm text-on-surface-variant">
           <span>
-            RECORD: <strong className="text-on-surface">{fmt1(progress.bestWpm)} WPM</strong>
+            Best: <strong className="text-on-surface">{fmt1(progress.bestWpm)} WPM</strong>
           </span>
           <span>
-            ACCURACY: <strong className="text-secondary">{fmt1(progress.bestAccuracy)}%</strong>
+            Accuracy: <strong className="text-secondary">{fmt1(progress.bestAccuracy)}%</strong>
           </span>
         </div>
       )}
       {status === "active" && (
         <div className="mb-space-xs flex items-center justify-between rounded bg-surface-container-low px-2 py-space-xs font-code-sm text-code-sm text-on-surface-variant">
           <span>
-            {progress && progress.attemptCount > 0 ? "BEST ATTEMPT: " : "FIRST ATTEMPT: "}
+            {progress && progress.attemptCount > 0 ? "Best: " : "First attempt: "}
             <strong className="text-on-surface">
               {progress && progress.bestWpm > 0 ? `${fmt1(progress.bestWpm)} WPM` : "—"}
             </strong>
           </span>
           <span className={progress && progress.bestAccuracy >= ACCURACY_GATE ? "text-secondary" : "text-error"}>
             {progress && progress.attemptCount > 0
-              ? `${fmt1(progress.bestAccuracy)}% ACC${progress.bestAccuracy >= ACCURACY_GATE ? "" : ` (NEEDS ${ACCURACY_GATE}%)`}`
-              : `0.0% ACC (NEEDS ${ACCURACY_GATE}%)`}
+              ? `${fmt1(progress.bestAccuracy)}% accuracy${progress.bestAccuracy >= ACCURACY_GATE ? "" : ` (needs ${ACCURACY_GATE}%)`}`
+              : `0.0% accuracy (needs ${ACCURACY_GATE}%)`}
           </span>
         </div>
       )}
       {status === "available" && (
         <div className="py-space-xs text-center font-code-sm text-code-sm text-on-surface-variant">
           <span>
-            TARGET SPEED: <strong className="text-primary">&gt; 45 WPM</strong> • PASS ACC:{" "}
+            Target: <strong className="text-primary">&gt; 45 WPM</strong> • Pass accuracy:{" "}
             <strong className="text-primary">{ACCURACY_GATE}.0%</strong>
           </span>
         </div>
       )}
       {status === "locked" && (
         <div className="py-space-xs text-center font-code-sm text-code-sm text-on-surface-variant/70">
-          Requires &gt;= {ACCURACY_GATE}% Acc on the previous module
+          Requires &gt;= {ACCURACY_GATE}% accuracy on the previous lesson
         </div>
       )}
       {status === "locked" ? (
@@ -349,7 +347,7 @@ function ModuleCard({
           className={cn(
             "flex w-full items-center justify-center gap-space-xs rounded-lg py-2 font-label-md text-label-md transition-all",
             status === "active"
-              ? "bg-primary-container py-2.5 font-bold text-on-primary-container shadow-[0_0_16px_rgb(249_115_22_calc(0.4_*_var(--accent-alpha)))] hover:bg-tertiary-container"
+              ? "bg-primary-container py-2.5 font-bold text-on-primary-container shadow-md hover:bg-tertiary-container"
               : "bg-surface-container-high text-on-surface hover:bg-primary-container hover:text-on-primary-container",
           )}
         >
@@ -358,10 +356,10 @@ function ModuleCard({
           </span>
           <span>
             {status === "completed"
-              ? "Replay Drill"
+              ? "Replay Lesson"
               : status === "active"
                 ? `Resume ${moduleNo}`
-                : "Start Module"}
+                : "Start Lesson"}
           </span>
         </button>
       )}
@@ -395,17 +393,14 @@ function ModuleCard({
       className={cn(
         "relative flex flex-col justify-between rounded-lg p-space-base transition-all",
         activeHighlight
-          ? "overflow-hidden bg-surface-container shadow-2xl shadow-[0_0_24px_rgb(249_115_22_calc(0.25_*_var(--accent-alpha)))]"
+          ? "overflow-hidden bg-surface-container shadow-md"
           : status === "locked"
             ? "bg-surface-container-lowest/60 opacity-75 backdrop-blur-sm"
             : "group bg-surface-container-lowest shadow-sm hover:bg-surface-container",
       )}
     >
       {activeHighlight && (
-        <>
-          <div className="absolute inset-x-0 top-0 h-1 bg-primary-container" />
-          <div className="pointer-events-none absolute -bottom-8 -right-8 h-28 w-28 rounded-full bg-primary-container/20 blur-xl" />
-        </>
+        <div className="absolute inset-x-0 top-0 h-1 rounded-t bg-primary-container/80" />
       )}
       <div>
         {header}
@@ -465,7 +460,7 @@ function LevelHeader({
       )}
     >
       {isActive && expanded && (
-        <div className="absolute left-0 right-0 top-0 h-1 bg-gradient-to-r from-primary-container via-primary to-primary-container" />
+        <div className="absolute left-0 right-0 top-0 h-1 rounded-t bg-primary-container/80" />
       )}
       <div className="flex items-center gap-space-base">
         <div
@@ -486,28 +481,21 @@ function LevelHeader({
           <div className="flex items-center gap-space-xs">
             <span
               className={cn(
-                "font-code-sm font-bold uppercase tracking-widest text-code-sm",
+                "text-xs font-semibold",
                 isActive ? "text-primary" : isComplete ? "text-secondary" : "text-on-surface-variant",
               )}
             >
-              LEVEL {String(level.level).padStart(2, "0")} // {level.tagline}
+              Level {level.level} • {level.tagline}
             </span>
-            <span
-              className={cn(
-                "rounded px-2 py-0.5 font-code-sm text-[10px] font-semibold uppercase",
-                isComplete
-                  ? "bg-secondary-container/20 text-secondary"
-                  : isActive
-                    ? "bg-primary-container/20 text-primary"
-                    : "bg-surface-container text-on-surface-variant",
-              )}
+            <StatusPill
+              tone={isComplete ? "mastered" : isActive ? "inProgress" : "locked"}
             >
               {isComplete
-                ? "100% COMPLETE"
+                ? "100% complete"
                 : isActive
-                  ? `${completedCount} OF ${total} MASTERED`
-                  : `LOCKED (0/${total})`}
-            </span>
+                  ? `${completedCount} of ${total} mastered`
+                  : `Locked (0/${total})`}
+            </StatusPill>
           </div>
           <h3
             className={cn(
@@ -522,19 +510,19 @@ function LevelHeader({
       <div className="flex items-center gap-space-lg">
         <div className="flex items-center gap-space-md font-code-sm text-code-sm">
           <div className="text-right">
-            <span className="block text-on-surface-variant">SPEED</span>
+            <span className="block text-on-surface-variant">Speed</span>
             <span className="font-semibold text-on-surface">
               {avgWpm !== null ? `${fmt1(avgWpm)} WPM` : "—"}
             </span>
           </div>
           <div className="text-right">
-            <span className="block text-on-surface-variant">ACCURACY</span>
+            <span className="block text-on-surface-variant">Accuracy</span>
             <span className="font-semibold text-on-surface">
               {avgAcc !== null ? `${fmt1(avgAcc)}%` : "—"}
             </span>
           </div>
           <div className="text-right">
-            <span className="block text-on-surface-variant">MODULES</span>
+            <span className="block text-on-surface-variant">Lessons</span>
             <span className={cn("font-semibold", completedCount > 0 ? "text-primary" : "text-on-surface")}>
               {completedCount} / {total}
             </span>
@@ -587,11 +575,11 @@ function LevelSection({
           {isActive && (
             <div className="mb-space-base flex items-center gap-space-sm rounded-lg bg-surface-container p-space-sm font-code-sm text-code-sm text-on-surface-variant">
               <span className="material-symbols-outlined text-[18px] text-primary">verified_user</span>
-              <span className="font-medium text-on-surface">Clearance Criteria:</span>
+              <span className="font-medium text-on-surface">Unlock requirements:</span>
               <span>
                 Must sustain <span className="font-bold text-primary">&gt;= {ACCURACY_GATE}% Accuracy</span> &amp;{" "}
                 <span className="font-bold text-primary">&gt; 45 WPM</span> in the same attempt to
-                unlock subsequent modules.
+                unlock subsequent lessons.
               </span>
             </div>
           )}
@@ -644,12 +632,12 @@ function SymbolTelemetry({ keys }: { keys: KeyStatRow[] }) {
           <div className="flex items-center gap-space-xs">
             <span className="material-symbols-outlined text-[18px] text-primary">query_stats</span>
             <h3 className="font-headline-md text-headline-md text-on-surface">
-              Symbol Latency Telemetry
+              Symbol Latency
             </h3>
           </div>
           <p className="mt-0.5 font-body-sm text-body-sm text-on-surface-variant">
-            Real-time neuromuscular cadence across key programming tokens.
-            Hesitations (&gt;180ms) indicate target friction zones.
+            Average response time for common programming symbols. Pauses over
+            &gt;180ms show where you slow down.
           </p>
         </div>
         <div className="flex items-center gap-space-base font-code-sm text-code-sm">
@@ -659,11 +647,11 @@ function SymbolTelemetry({ keys }: { keys: KeyStatRow[] }) {
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-            <span className="text-on-surface-variant">Optimal (100–180ms)</span>
+            <span className="text-on-surface-variant">Steady (100–180ms)</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full bg-primary-container" />
-            <span className="text-on-surface-variant">Hesitation (&gt;180ms)</span>
+            <span className="text-on-surface-variant">Slow (&gt;180ms)</span>
           </div>
         </div>
       </div>
@@ -673,10 +661,10 @@ function SymbolTelemetry({ keys }: { keys: KeyStatRow[] }) {
           const heightPct = Math.max(12, Math.round((chip.avgLatencyMs / maxLatency) * 100));
           const tone =
             latency > 180
-              ? { bar: "bg-primary-container", label: "text-error", tag: latency > 200 ? "HESITATION" : "FRICTION" }
+              ? { bar: "bg-primary-container", label: "text-error", tag: "Slow" }
               : latency >= 100
-                ? { bar: "bg-primary", label: "text-on-surface-variant", tag: "NOMINAL" }
-                : { bar: "bg-secondary", label: "text-secondary", tag: "OPTIMAL" };
+                ? { bar: "bg-primary", label: "text-on-surface-variant", tag: "Steady" }
+                : { bar: "bg-secondary", label: "text-secondary", tag: "Fast" };
           return (
             <div
               key={`${chip.key}-${chip.shiftRequired ? "s" : "b"}`}
@@ -851,7 +839,7 @@ export default function LessonsScreen() {
     return (
       <main className="flex w-full flex-1 items-center justify-center bg-surface">
         <span className="font-code-md text-code-md text-on-surface-variant">
-          LOADING CURRICULUM…
+          Loading curriculum…
         </span>
       </main>
     );
@@ -871,7 +859,7 @@ export default function LessonsScreen() {
         {dbError !== null && (
           <div className="mb-space-base flex items-center gap-2 rounded-lg border border-error/40 bg-error-container/30 px-space-sm py-2 font-code-sm text-code-sm text-error">
             <span className="material-symbols-outlined text-[14px]">error</span>
-            <span>PROGRESS UNAVAILABLE: {dbError} — module states shown as locked.</span>
+            <span>Progress unavailable: {dbError} — lesson states shown as locked.</span>
           </div>
         )}
 
@@ -964,7 +952,7 @@ export default function LessonsScreen() {
         <div className="mb-space-xl flex flex-col gap-space-base">
           {visibleLevels.length === 0 ? (
             <div className="rounded-xl bg-surface-container-lowest p-space-xl text-center font-code-md text-code-md text-on-surface-variant">
-              No modules match the current search or filters.
+              No lessons match the current search or filters.
             </div>
           ) : (
             visibleLevels.map(({ level }) => (

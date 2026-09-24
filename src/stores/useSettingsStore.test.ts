@@ -35,12 +35,12 @@ describe("useSettingsStore", () => {
     expect(useSettingsStore.getState().hydrated).toBe(true);
   });
 
-  it("hydrates a persisted row and merges partial data over defaults", async () => {
+  it("hydrates a persisted row and ignores obsolete settings", async () => {
     await settingsRepo.set(APP_SETTINGS_KEY, { theme: "terminal-mono", accentIntensity: 30 });
     await useSettingsStore.getState().hydrate();
     const settings = useSettingsStore.getState().settings;
     expect(settings.theme).toBe("terminal-mono");
-    expect(settings.accentIntensity).toBe(30);
+    expect(settings).not.toHaveProperty("accentIntensity");
     // Untouched keys keep their defaults.
     expect(settings.backspacePolicy).toBe("counted");
     expect(settings.launchBehavior).toBe("dashboard");

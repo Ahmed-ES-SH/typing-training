@@ -76,12 +76,12 @@ export function KeyboardVisualization({
                 key={key.id}
                 style={{ flexGrow: key.width ?? 1, flexBasis: 0 }}
                 className={cn(
-                  "flex h-11 min-w-0 items-center justify-center rounded-md border text-xs font-code-sm",
+                  "flex h-11 min-w-0 items-center justify-center rounded-md border text-xs font-medium",
                   highlighted
-                    ? "border-primary bg-primary-container font-bold text-on-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(0.9_*_var(--accent-alpha)))] ring-1 ring-primary"
-                    : "border-surface-container-highest/40 bg-surface-container text-on-surface-variant",
+                    ? "border-primary/50 bg-primary-container font-semibold text-on-primary-container shadow-sm shadow-primary/25 ring-1 ring-primary/40"
+                    : "border-white/5 bg-surface-container-high text-on-surface",
                   !highlighted && fingerGuides && key.kind !== "special" && FINGER_TINT[key.finger],
-                  key.kind === "special" && !highlighted && "bg-surface-container-high text-[10px] text-outline",
+                  key.kind === "special" && !highlighted && "bg-surface-container text-[10px] text-on-surface-variant",
                 )}
                 title={`${fingerMeta.label}${key.shift ? ` — shift: ${key.shift}` : ""}`}
               >

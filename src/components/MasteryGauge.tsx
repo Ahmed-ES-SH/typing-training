@@ -52,8 +52,12 @@ export function MasteryGauge({ pct }: { pct: number }) {
   );
 }
 
-/** Tier label from the overall percentage (matches the design's "Tier 3"). */
+/** Friendly progress phrase from the overall percentage. */
 export function tierLabel(pct: number): string {
   const safePct = Math.max(0, Number.isFinite(pct) ? pct : 0);
-  return `Tier ${Math.min(10, Math.floor(safePct / 10) + 1)} Qualified`;
+  if (safePct >= 100) return "Curriculum cleared";
+  if (safePct >= 70) return "Nearly there";
+  if (safePct >= 40) return "Making progress";
+  if (safePct >= 15) return "Getting started";
+  return "Just starting out";
 }
