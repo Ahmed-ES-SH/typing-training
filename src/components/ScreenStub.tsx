@@ -23,11 +23,7 @@ export function ScreenStub({ screenId, phase, description }: ScreenStubProps) {
   return (
     <main className="flex w-full flex-1 flex-col gap-space-base bg-surface p-space-sm sm:p-space-base">
       <div className="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant">
-        <span className="text-primary">~</span>
-        <span>/</span>
-        <span>{screenId}</span>
-        <span className="text-outline">//</span>
-        <span>{label}</span>
+        <span className="text-primary">{label}</span>
       </div>
 
       <div className="flex flex-1 items-center justify-center">
@@ -36,7 +32,7 @@ export function ScreenStub({ screenId, phase, description }: ScreenStubProps) {
             {icon}
           </span>
           <h1 className="font-headline-md text-headline-md text-on-surface">
-            {screenId} // {label}
+            {label}
           </h1>
           <p className="max-w-md font-body-md text-body-md text-on-surface-variant">
             {description}

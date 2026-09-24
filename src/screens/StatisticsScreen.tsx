@@ -17,6 +17,7 @@ import {
 
 import { getLesson } from "../content";
 import { StatCard } from "../components/StatCard";
+import { AttemptResultPill } from "../components/AttemptResultPill";
 import { KeyHeatmap } from "../components/KeyHeatmap";
 import { ConsistencyStrip } from "../components/ConsistencyStrip";
 import { analyzeWeaknesses } from "../lib/intelligence/analyzer";
@@ -38,7 +39,7 @@ import {
   useStatsStore,
   type RangeData,
 } from "../stores/useStatsStore";
-import { evaluateAttempt, ACCURACY_GATE } from "../lib/curriculum/rules";
+import { ACCURACY_GATE } from "../lib/curriculum/rules";
 import type { PerLevelProgress } from "../lib/stats/progressService";
 
 /**
@@ -72,20 +73,6 @@ const TOOLTIP_STYLE = {
 const dayToTs = (day: string) => new Date(`${day}T12:00:00`).getTime();
 const tickDay = (ts: number) =>
   new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase();
-
-function resultChip(completed: boolean, wpm: number, accuracy: number) {
-  const passed = evaluateAttempt({ completed, accuracy, wpm }) === "PASS";
-  return (
-    <span
-      className={cn(
-        "rounded px-2 py-0.5 font-code-sm text-[10px] font-bold tracking-wider",
-        passed ? "bg-secondary-container/40 text-secondary" : "bg-error-container text-error",
-      )}
-    >
-      {passed ? "PASS" : "FAIL"}
-    </span>
-  );
-}
 
 /* ------------------------------- charts -------------------------------- */
 
@@ -209,7 +196,7 @@ function AccuracyOverTimeChart({ rangeData }: { rangeData: RangeData }) {
           stroke={ORANGE}
           strokeDasharray="5 4"
           label={{
-            value: `${ACCURACY_GATE}% GATE`,
+            value: `${ACCURACY_GATE}% required`,
             position: "insideBottomRight",
             fill: ORANGE,
             fontSize: 10,
@@ -413,13 +400,13 @@ export default function StatisticsScreen() {
           <div>
             <div className="flex flex-wrap items-center gap-2 font-code-sm text-code-sm">
               <span className="rounded bg-surface-container-high px-2 py-0.5 font-bold text-primary">
-                PERFORMANCE ANALYTICS // V2.4
+                Performance analytics
               </span>
               <span className="text-outline-variant">•</span>
-              <span className="text-on-surface-variant">EVERY KEYSTROKE ACCOUNTED FOR</span>
+              <span className="text-on-surface-variant">Every keystroke accounted for</span>
             </div>
             <h1 className="mt-3 font-display-lg text-4xl font-bold tracking-tight text-on-surface">
-              Statistics &amp; Key Telemetry
+              Statistics
             </h1>
             <p className="mt-1 max-w-xl font-body-md text-body-md text-on-surface-variant">
               Aggregated from {fmtInt(lifetime?.attempts ?? 0)} all-time local
@@ -454,13 +441,13 @@ export default function StatisticsScreen() {
                     : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface",
                 )}
               >
-                PER LEVEL
+                By level
               </button>
             </div>
           </div>
 
           {/* Aggregate chips — LIFETIME values (plan §3.5) so they can never
-              contradict the raw ledger below; only the charts are filtered. */}
+              contradict the attempt history below; only the charts are filtered. */}
           <div className="grid grid-cols-2 gap-space-md lg:grid-cols-4">
             <StatCard
               icon="speed"
@@ -495,7 +482,7 @@ export default function StatisticsScreen() {
       )}
       {loading && rangeData === undefined && (
         <div className="rounded-xl border border-surface-container-highest/40 bg-surface-container-low p-space-lg text-center font-code-sm text-code-sm uppercase tracking-widest text-outline">
-          Loading telemetry…
+          Loading statistics…
         </div>
       )}
 
@@ -564,14 +551,14 @@ export default function StatisticsScreen() {
                 <span className="material-symbols-outlined text-[18px] text-primary-container">
                   grid_on
                 </span>
-                Key Heatmap // {range === "all" ? "All-Time" : range === "90d" ? "90-Day" : "30-Day"} Accuracy
+                Key Heatmap: {range === "all" ? "All-Time" : range === "90d" ? "90-Day" : "30-Day"} Accuracy
               </h3>
               <span className="flex items-center gap-2 font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
-                <span className="rounded bg-error-container px-1.5 py-0.5 text-error">&lt;85% weak</span>
-                <span className="rounded bg-secondary-container/60 px-1.5 py-0.5 text-secondary">85–93%</span>
-                <span className="rounded bg-primary-container/30 px-1.5 py-0.5 text-primary">93–97%</span>
-                <span className="rounded bg-primary/20 px-1.5 py-0.5 text-primary">&ge;97% strong</span>
-                <span className="rounded bg-surface-container-high px-1.5 py-0.5">no data</span>
+                <span className="rounded-full border border-error/30 bg-error-container px-2.5 py-0.5 text-xs font-medium text-error">&lt;85% weak</span>
+                <span className="rounded-full border border-secondary-container/40 bg-secondary-container/60 px-2.5 py-0.5 text-xs font-medium text-secondary">85–93%</span>
+                <span className="rounded-full border border-primary-container/30 bg-primary-container/30 px-2.5 py-0.5 text-xs font-medium text-primary">93–97%</span>
+                <span className="rounded-full border border-primary/30 bg-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary">&ge;97% strong</span>
+                <span className="rounded-full border border-transparent bg-surface-container-high px-2.5 py-0.5 text-xs font-medium text-on-surface-variant">no data</span>
               </span>
             </div>
             <KeyHeatmap data={heatmapData} slowest={slowest} />
@@ -590,7 +577,7 @@ export default function StatisticsScreen() {
                 <span className="material-symbols-outlined text-[18px] text-primary-container">
                   calendar_month
                 </span>
-                Training Consistency // 90-Day
+                Training Consistency · 90-Day
               </h3>
               <span className="font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
                 height = minutes trained
@@ -598,7 +585,7 @@ export default function StatisticsScreen() {
             </div>
             {consistencyError ? (
               <p className="rounded-lg border border-error/40 bg-error-container/20 px-space-base py-3 text-center font-code-sm text-code-sm text-error">
-                Consistency unavailable — the training ledger could not be read.
+                Consistency unavailable — your training history could not be read.
               </p>
             ) : (
               <ConsistencyStrip
@@ -611,14 +598,14 @@ export default function StatisticsScreen() {
 
           {/* ------------------- Raw log + sidebar grid ------------------- */}
           <div className="grid grid-cols-1 gap-space-md xl:grid-cols-3">
-            {/* Attempt history // raw log */}
+            {/* Attempt history */}
             <section className="rounded-xl border border-surface-container-highest/40 bg-surface-container-low p-space-base shadow-xl xl:col-span-2">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
                   <span className="material-symbols-outlined text-[18px] text-primary-container">
                     table_chart
                   </span>
-                  Attempt History // Raw Log
+                  Attempt History
                 </h3>
                 <button
                   type="button"
@@ -626,12 +613,12 @@ export default function StatisticsScreen() {
                   disabled={exporting}
                   className="font-code-sm text-code-sm font-bold tracking-wider text-primary hover:text-primary-fixed disabled:opacity-50"
                 >
-                  {exporting ? "EXPORTING…" : "EXPORT CSV ↓"}
+                  {exporting ? "Exporting…" : "Export CSV ↓"}
                 </button>
               </div>
               {!history || history.rows.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-surface-container-highest bg-surface-container-lowest/50 px-space-base py-space-lg text-center font-code-sm text-code-sm text-outline">
-                  No attempts logged in this range — the raw ledger stays empty
+                  No attempts logged in this range — your history stays empty
                   until a lesson is finished.
                 </p>
               ) : (
@@ -640,11 +627,11 @@ export default function StatisticsScreen() {
                     <thead>
                       <tr className="font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
                         <th className="pb-2 pr-2 font-semibold">#</th>
-                        <th className="pb-2 pr-2 font-semibold">Module</th>
+                        <th className="pb-2 pr-2 font-semibold">Lesson</th>
                         <th className="pb-2 pr-2 text-right font-semibold">WPM</th>
-                        <th className="pb-2 pr-2 text-right font-semibold">ACC</th>
-                        <th className="pb-2 pr-2 text-right font-semibold">ERR</th>
-                        <th className="pb-2 pr-2 text-right font-semibold">BKSP</th>
+                        <th className="pb-2 pr-2 text-right font-semibold">Accuracy</th>
+                        <th className="pb-2 pr-2 text-right font-semibold">Errors</th>
+                        <th className="pb-2 pr-2 text-right font-semibold">Backspaces</th>
                         <th className="pb-2 pr-2 text-right font-semibold">Duration</th>
                         <th className="pb-2 text-center font-semibold">Result</th>
                       </tr>
@@ -655,7 +642,7 @@ export default function StatisticsScreen() {
                         return (
                           <tr
                             key={row.id}
-                            className="border-t border-surface-container-highest/30"
+                            className="border-t border-white/5"
                           >
                             <td className="py-2 pr-2 text-outline">{row.id}</td>
                             <td className="py-2 pr-2 text-on-surface">
@@ -677,7 +664,7 @@ export default function StatisticsScreen() {
                               {fmtDuration(row.durationMs)}
                             </td>
                             <td className="py-2 text-center">
-                              {resultChip(row.completed, row.wpm, row.accuracy)}
+                              <AttemptResultPill completed={row.completed} wpm={row.wpm} accuracy={row.accuracy} />
                             </td>
                           </tr>
                         );
@@ -768,7 +755,7 @@ export default function StatisticsScreen() {
           </div>
 
           <p className="px-1 pb-1 font-code-sm text-[10px] uppercase tracking-wider text-outline-variant">
-            Raw log page size {HISTORY_PAGE_SIZE} • CSV export contains every
+            History page size {HISTORY_PAGE_SIZE} • CSV export contains every
             filtered row, not a summary
           </p>
         </>

@@ -73,10 +73,10 @@ function QueueCard({ target }: { target: WeaknessTarget }) {
   const isMaintenance = target.state === "maintenance";
   const acc = Math.round(target.accuracy);
   const tone = isTargeted
-    ? { border: "border-error/40", badge: "bg-error-container/40 text-error", bar: "bg-error", icon: "error", iconColor: "text-error" }
+    ? { border: "border-error/40", badge: "border-error/30 bg-error-container/40 text-error", bar: "bg-error", icon: "error", iconColor: "text-error" }
     : isMaintenance
-      ? { border: "border-secondary/40", badge: "bg-secondary-container/30 text-secondary", bar: "bg-secondary", icon: "adjust", iconColor: "text-secondary" }
-      : { border: "", badge: "bg-primary-container/20 text-primary", bar: "", icon: "check_circle", iconColor: "text-primary" };
+      ? { border: "border-secondary/40", badge: "border-secondary-container/40 bg-secondary-container/30 text-secondary", bar: "bg-secondary", icon: "adjust", iconColor: "text-secondary" }
+      : { border: "", badge: "border-primary-container/30 bg-primary-container/20 text-primary", bar: "", icon: "check_circle", iconColor: "text-primary" };
 
   return (
     <div
@@ -98,8 +98,8 @@ function QueueCard({ target }: { target: WeaknessTarget }) {
             {CHAR_NAMES[target.key] ?? "symbol"}
           </span>
         </div>
-        <span className={cn("font-code-sm text-code-sm px-1.5 py-0.5 rounded font-bold", tone.badge)}>
-          {acc}% ACC
+        <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-medium", tone.badge)}>
+          {acc}% accuracy
         </span>
       </div>
       {(isTargeted || isMaintenance) && (
@@ -111,16 +111,17 @@ function QueueCard({ target }: { target: WeaknessTarget }) {
             <span>
               {target.presses.toLocaleString()} exposures • {target.misses.toLocaleString()} misses
             </span>
-            {target.priority !== null && <span className="text-error">PRIORITY {target.priority}</span>}
+            {target.priority !== null && <span className="text-error">Priority {target.priority}</span>}
             {target.priority === null && (
-              <span className="text-secondary">{isMaintenance ? "MAINTENANCE" : "IN POOL"}</span>
+              <span className="text-secondary">{isMaintenance ? "Maintenance" : "In pool"}</span>
             )}
           </div>
         </>
       )}
       {!isTargeted && !isMaintenance && (
         <div className="font-code-sm text-code-sm text-on-surface-variant">
-          Graduated {target.stateSince} • {target.state === "eliminated" ? "eliminated" : "maintenance pool"}
+          Graduated {target.stateSince} •{" "}
+          {target.state === "eliminated" ? "improved" : "maintenance pool"}
         </div>
       )}
     </div>
@@ -141,10 +142,10 @@ function AdaptiveGate({ children }: { children: React.ReactNode }) {
         className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg bg-surface-container-high py-2 font-label-md text-sm font-semibold text-on-surface-variant opacity-60"
       >
         <span className="material-symbols-outlined text-[16px]">lock</span>
-        <span>ADAPTIVE LESSONS OFF</span>
+        <span>Adaptive lessons off</span>
       </button>
       <p className="text-center font-code-sm text-[10px] uppercase tracking-wider text-outline">
-        enable in settings // training
+        Enable in Settings → Training
       </p>
     </div>
   );
@@ -180,13 +181,13 @@ function QueueSidebar({
       <div className="relative overflow-hidden border-b border-surface-container-highest/40 bg-gradient-to-b from-error-container/10 to-transparent p-space-base">
         <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-error/15 blur-2xl" />
         <div className="mb-1.5 flex items-center justify-between font-code-sm text-code-sm text-on-surface-variant">
-          <span className="font-bold tracking-wider text-error">WEAKNESS QUEUE // AUTO-GEN</span>
+          <span className="font-bold tracking-wider text-error">Weakness Queue</span>
           <span className="rounded bg-surface-container px-space-xs py-0.5 font-bold font-code-sm text-error">
-            {active.length} KEYS
+            {active.length} keys
           </span>
         </div>
         <h2 className="mb-2 font-headline-md text-headline-md leading-snug tracking-tight text-on-surface">
-          Target Elimination Queue
+          Keys to Practice
         </h2>
         <p className="mb-space-sm font-body-sm text-body-sm text-on-surface-variant">
           Ranked by rolling 30-day error density. Sessions re-weight
@@ -194,7 +195,7 @@ function QueueSidebar({
         </p>
         {active.length > 0 && (
           <div className="flex items-center gap-1 font-code-sm text-code-sm text-on-surface-variant">
-            <span className="text-on-surface">EVOLUTION:</span>
+            <span className="text-on-surface">Improving:</span>
             <span className="rounded bg-error-container/40 px-1 py-0.5 font-bold text-error">{chainNow}</span>
             <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
             <span className="rounded bg-secondary-container/30 px-1 py-0.5 font-bold text-secondary">{chainNext}</span>
@@ -241,7 +242,7 @@ function QueueSidebar({
             ["Session length", `${config?.setLength ?? 120} keys`],
             [
               "Symbol weight",
-              config ? `AGGRESSIVE ×${config.symbolWeight}` : "—",
+              config ? `Boosted ×${config.symbolWeight}` : "—",
               "text-primary",
             ],
             [
@@ -272,7 +273,11 @@ function QueueSidebar({
           >
             <span className="material-symbols-outlined text-[16px]">bolt</span>
             <span>
-              {busy ? "GENERATING…" : running ? "RESTART DRILL" : `START DRILL ${drillNumber}`}
+              {busy
+                ? "Generating…"
+                : running
+                  ? "Restart drill"
+                  : `Start drill ${drillNumber}`}
             </span>
           </button>
         </AdaptiveGate>
@@ -324,7 +329,7 @@ function DrillBuffer({
             if (entry === undefined) return null;
             const isCurrent = running && globalIndex === engineState.position;
             // §15: focus targets are error-tinted BEFORE they are typed so
-            // the operator sees what the drill is training.
+            // the user sees what the drill is training.
             const isFocus = focus.has(expected) && expected !== " ";
             const cls =
               entry.status === "correct"
@@ -500,7 +505,7 @@ function RecoveryCurves({ analysis }: { analysis: WeaknessAnalysis | null }) {
                         {projection && projection.slopePerDay > 0
                           ? `improving +${fmt1(projection.slopePerDay)}%/day${
                               projection.etaDays !== null
-                                ? ` — elimination ETA ${projection.etaDays} days`
+                                ? ` — about ${projection.etaDays} days to recover`
                                 : ""
                             }`
                           : projection && projection.slopePerDay < 0
@@ -676,18 +681,20 @@ export default function WeaknessTrainingScreen() {
           <div className="relative z-10">
             <div className="mb-space-base flex flex-wrap items-center justify-between gap-space-sm">
               <div className="flex items-center gap-space-xs">
-                <span className="inline-flex items-center gap-1.5 rounded bg-error-container/40 px-space-xs py-space-2xs font-code-sm uppercase tracking-wider text-error">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-error/30 bg-error-container/40 px-2.5 py-0.5 text-xs font-medium text-error">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-error" />
-                  {drill !== null ? `DRILL ${drillNumber} // GENERATED FROM YOUR DATA` : "NO DRILL RUNNING"}
+                  {drill !== null
+                    ? `Drill ${drillNumber} • From your data`
+                    : "No drill running"}
                 </span>
                 <span className="font-code-sm text-code-sm text-on-surface-variant">
-                  FOCUS: {focusKeys.length > 0 ? focusKeys.join(" ") : "—"}
+                  Focus: {focusKeys.length > 0 ? focusKeys.join(" ") : "—"}
                 </span>
               </div>
               {drill !== null && (
                 <div className="flex items-center gap-space-xs font-code-sm text-code-sm">
                   <span className="rounded bg-surface-container px-space-xs py-0.5 text-on-surface-variant">
-                    SET {drill.setIndex + 1} OF {drill.plan.sets.length}
+                    Set {drill.setIndex + 1} of {drill.plan.sets.length}
                   </span>
                   <button
                     type="button"
@@ -695,7 +702,7 @@ export default function WeaknessTrainingScreen() {
                     className="flex items-center gap-1 rounded bg-surface-container px-space-xs py-0.5 text-on-surface-variant hover:text-on-surface"
                   >
                     <span className="material-symbols-outlined text-[14px]">refresh</span>
-                    REGENERATE
+                    Regenerate
                   </button>
                 </div>
               )}
@@ -776,7 +783,7 @@ export default function WeaknessTrainingScreen() {
           <div className="rounded-xl border border-primary-container/40 bg-surface-container-low p-space-lg shadow-xl">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-headline-md text-headline-md text-on-surface">
-                SET {drill.setIndex} OF {drill.plan.sets.length} COMPLETE
+                Set {drill.setIndex} of {drill.plan.sets.length} complete
               </h3>
               <button
                 type="button"
@@ -784,7 +791,7 @@ export default function WeaknessTrainingScreen() {
                 className="flex items-center gap-2 rounded-lg bg-primary-container px-space-lg py-2 font-label-md text-sm font-semibold text-on-primary-container shadow-lg shadow-primary-container/30 hover:bg-tertiary-container"
               >
                 <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                NEXT SET ({drill.setIndex + 1} of {drill.plan.sets.length})
+                Next set ({drill.setIndex + 1} of {drill.plan.sets.length})
               </button>
             </div>
             <div className="mt-2 grid grid-cols-2 gap-space-sm md:grid-cols-4">
@@ -804,14 +811,14 @@ export default function WeaknessTrainingScreen() {
         {phase === "finished" && drill !== null && drill.setResults.length > 0 && (
           <div className="rounded-xl border border-secondary/40 bg-surface-container-low p-space-lg shadow-xl">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-headline-md text-headline-md text-on-surface">DRILL COMPLETE</h3>
+              <h3 className="font-headline-md text-headline-md text-on-surface">Drill complete</h3>
               <button
                 type="button"
                 onClick={() => void regenerate()}
                 className="flex items-center gap-2 rounded-lg bg-primary-container px-space-lg py-2 font-label-md text-sm font-semibold text-on-primary-container hover:bg-tertiary-container"
               >
                 <span className="material-symbols-outlined text-[16px]">refresh</span>
-                NEW DRILL
+                New drill
               </button>
             </div>
             <p className="font-code-sm text-code-sm text-on-surface-variant">

@@ -7,6 +7,7 @@ import {
   Slider,
 } from "../components/FormPrimitives";
 import { Modal } from "../components/Modal";
+import { StatusPill } from "../components/StatusPill";
 import { useCustomLessonsStore } from "../stores/useCustomLessonsStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { detectTargets, toCurriculumLesson } from "../lib/customLessons/domain";
@@ -165,10 +166,10 @@ function ModuleCard({
   onDelete: () => void;
 }) {
   const sourceLabel = lesson.isDraft
-    ? `DRAFT // ${lesson.syntaxFamily.toUpperCase() || "CODE"}`
+    ? `Draft • ${lesson.syntaxFamily || "Code"}`
     : lesson.source === "imported"
-      ? "IMPORTED // COLLECTION"
-      : `CUSTOM // ${lesson.syntaxFamily.toUpperCase() || "CODE"}`;
+      ? "Imported collection"
+      : `Custom • ${lesson.syntaxFamily || "Code"}`;
   const practiced = stats.attempts > 0;
 
   return (
@@ -193,16 +194,9 @@ function ModuleCard({
             >
               {sourceLabel}
             </span>
-            <span
-              className={cn(
-                "rounded px-1.5 py-0.5 font-label-sm text-label-sm font-bold uppercase",
-                practiced
-                  ? "bg-primary-container/20 text-primary"
-                  : "bg-surface-container text-on-surface-variant",
-              )}
-            >
+            <StatusPill tone={practiced ? "inProgress" : "available"}>
               {lesson.isDraft ? "Draft" : practiced ? "Practiced" : "New"}
-            </span>
+            </StatusPill>
           </div>
           <h3 className="truncate font-headline-md text-headline-md text-on-surface">
             {lesson.title}
@@ -217,7 +211,7 @@ function ModuleCard({
           {practiced ? (
             <>
               <span className="font-code-sm text-code-sm font-bold text-primary">
-                PB {Math.round(stats.bestWpm)} WPM
+                Best {Math.round(stats.bestWpm)} WPM
               </span>
               <span className="font-code-sm text-code-sm text-on-surface-variant">
                 {stats.attempts} attempt{stats.attempts === 1 ? "" : "s"}
@@ -301,20 +295,18 @@ function CollectionCard({
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-space-xs">
             <span className="font-code-sm tracking-wider text-outline">
-              IMPORTED // COLLECTION
+              Imported collection
             </span>
-            <span className="rounded bg-surface-container px-1.5 py-0.5 font-label-sm text-label-sm font-bold uppercase text-on-surface-variant">
-              Imported
-            </span>
+            <StatusPill tone="available">Imported</StatusPill>
           </div>
           <h3 className="font-headline-md text-headline-md text-on-surface">{name}</h3>
           <p className="mt-0.5 font-body-sm text-body-sm text-on-surface-variant">
-            Imported collection • {modules.length} module{modules.length === 1 ? "" : "s"} — expand to practice per module.
+            Imported collection • {modules.length} lesson{modules.length === 1 ? "" : "s"} — expand to practice one at a time.
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end">
           <span className="font-code-sm text-code-sm text-on-surface-variant">
-            {modules.length} modules
+            {modules.length} lessons
           </span>
           <span className="font-code-sm text-code-sm text-on-surface-variant">v1 format ✓</span>
         </div>
@@ -338,7 +330,7 @@ function CollectionCard({
             onClick={() => setExpanded((value) => !value)}
             className="rounded bg-surface-container-lowest px-space-sm py-1.5 font-label-sm text-label-sm text-on-surface-variant transition-colors hover:text-on-surface"
           >
-            {expanded ? "COLLAPSE" : "EXPAND"}
+            {expanded ? "Collapse" : "Expand"}
           </button>
           <button
             type="button"
@@ -352,7 +344,7 @@ function CollectionCard({
         </div>
       </div>
       {expanded && (
-        <div className="mt-space-sm flex flex-col gap-1 border-t border-surface-container-highest/30 pt-space-sm">
+        <div className="mt-space-sm flex flex-col gap-1 border-t border-white/5 pt-space-sm">
           {modules.map((module) => (
             <div
               key={module.id}
@@ -366,7 +358,7 @@ function CollectionCard({
                 onClick={() => onPracticeModule(module)}
                 className="rounded bg-surface-container px-2 py-0.5 font-label-sm text-label-sm font-bold text-primary hover:bg-surface-container-high"
               >
-                PRACTICE
+                Practice
               </button>
             </div>
           ))}
@@ -538,13 +530,13 @@ export default function CustomLessonsScreen() {
     const state: FormState = { ...form, isDraft: asDraft };
     if (!validation.valid && state.content.trim().length > 0 && state.title.trim().length > 0) {
       // Schema-invalid content never reaches SQL (§23) — surface the issues.
-      setImportState({ phase: "error", title: "Module rejected", issues: validation.issues });
+      setImportState({ phase: "error", title: "Lesson rejected", issues: validation.issues });
       return;
     }
     if (state.title.trim().length === 0 || state.content.trim().length === 0) {
       setImportState({
         phase: "error",
-        title: "Module rejected",
+        title: "Lesson rejected",
         issues: ["title and content are required"],
       });
       return;
@@ -601,7 +593,7 @@ export default function CustomLessonsScreen() {
       );
       const path = await saveTextFile(backupFilename("collection"), text);
       if (path !== null) {
-        setImportState({ phase: "success", message: `Exported ${modules.length} module(s) to ${path}` });
+        setImportState({ phase: "success", message: `Exported ${modules.length} lesson(s) to ${path}` });
       }
     } catch (error) {
       setImportState({
@@ -660,7 +652,7 @@ export default function CustomLessonsScreen() {
         phase: "success",
         message: importState.envelope.kind === "collection"
           ? `Collection imported: ${"added" in plan && Array.isArray(plan.added) ? plan.added.length : 0} module(s) added.`
-          : "Modules imported.",
+          : "Lessons imported.",
       });
     } catch (error) {
       setImportState({
@@ -704,14 +696,14 @@ export default function CustomLessonsScreen() {
               <div className="mb-space-xs flex items-center gap-space-xs">
                 <span className="inline-flex items-center gap-1.5 rounded bg-surface-container-high px-space-xs py-space-2xs font-code-sm text-code-sm uppercase tracking-wider text-primary">
                   <span className="h-1.5 w-1.5 rounded-full bg-primary-container animate-pulse" />
-                  CUSTOM MODULES // LOCAL JSON
+                  Custom lessons • Stored locally
                 </span>
               </div>
               <h1 className="font-display-lg text-display-lg tracking-tight text-on-surface">
-                Module Forge
+                Custom Lessons
               </h1>
               <p className="mt-space-xs max-w-xl font-body-md text-body-md text-on-surface-variant">
-                Author, import, and drill your own lesson modules. Everything stays
+                Author, import, and drill your own lessons. Everything stays
                 on-disk — validated with strict schemas before it ever reaches the
                 database.
               </p>
@@ -739,12 +731,12 @@ export default function CustomLessonsScreen() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search custom modules by title, tag, or target key..."
+              placeholder="Search custom lessons by title, tag, or target key..."
               className="w-full rounded-lg bg-surface-container-lowest py-2 pl-10 pr-space-base font-code-md text-code-md text-on-surface transition-all placeholder:text-on-surface-variant/50 focus:bg-surface-container focus:outline-none focus:ring-1 focus:ring-primary-container"
             />
           </div>
           <PillGroup<FilterId>
-            label="Module filters"
+            label="Lesson filters"
             value={filter}
             onChange={setFilter}
             options={[
@@ -767,12 +759,12 @@ export default function CustomLessonsScreen() {
           <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-surface-container-highest/50 bg-surface-container-lowest/40 p-space-lg text-center">
             <span className="material-symbols-outlined text-[36px] text-outline">construction</span>
             <p className="mt-2 font-headline-md text-headline-md text-on-surface">
-              No modules here yet
+              No lessons here yet
             </p>
             <p className="mt-1 max-w-md font-body-sm text-body-sm text-on-surface-variant">
               {lessons.length === 0
-                ? "Forge your first module with New Lesson, or import a JSON collection."
-                : "No module matches the current search/filter."}
+                ? "Create your first lesson with New Lesson, or import a JSON collection."
+                : "No lesson matches the current search/filter."}
             </p>
           </div>
         ) : (
@@ -818,7 +810,7 @@ export default function CustomLessonsScreen() {
           <div className="flex items-center justify-between border-b border-surface-container-highest/40 p-space-base">
             <div>
               <span className="font-code-sm text-code-sm font-bold tracking-wider text-primary">
-                {form.id === null ? "NEW MODULE // FORM" : "EDIT MODULE // FORM"}
+                {form.id === null ? "New lesson" : "Edit lesson"}
               </span>
               <h2 className="mt-0.5 font-headline-md text-headline-md tracking-tight text-on-surface">
                 {form.id === null ? "Create Custom Lesson" : `Edit: ${form.title || "…"}`}
@@ -983,7 +975,7 @@ export default function CustomLessonsScreen() {
               <span className="material-symbols-outlined text-[14px]">
                 {validation.valid ? "check_circle" : "error"}
               </span>
-              {validation.valid ? "SCHEMA VALID ✓" : "SCHEMA INCOMPLETE"}
+              {validation.valid ? "Valid ✓" : "Incomplete"}
             </div>
             <div className="flex items-center gap-space-sm">
               <KernelButton onClick={() => void saveForm(true)}>Save Draft</KernelButton>
@@ -1012,8 +1004,8 @@ export default function CustomLessonsScreen() {
         >
           <p>
             <strong className="text-on-surface">{deleteTarget.title}</strong> will be removed
-            from your library. Its past attempts stay in the local ledger (§10) — only the
-            module row is deleted. This cannot be undone.
+            from your library. Its past attempts stay in your history — only the
+            lesson row is deleted. This cannot be undone.
           </p>
         </Modal>
       )}
@@ -1089,7 +1081,7 @@ function Chip({ char, onRemove }: { char: string; onRemove: () => void }) {
       title="Remove"
       aria-label={`Remove ${char === " " ? "space" : char} target`}
       onClick={onRemove}
-      className="rounded bg-primary-container/20 px-1.5 py-0.5 font-code-sm text-code-sm font-bold text-primary transition-colors hover:bg-error-container/40 hover:text-error"
+      className="rounded-full border border-primary-container/30 bg-primary-container/10 px-2.5 py-0.5 text-xs font-medium text-primary transition-colors hover:border-error/30 hover:bg-error-container/40 hover:text-error"
     >
       {char} ×
     </button>

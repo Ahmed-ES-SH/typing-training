@@ -60,21 +60,18 @@ export function NavSidebar() {
                 type="button"
                 onClick={() => useUiStore.getState().navigate(screen.id)}
                 aria-current={active ? "page" : undefined}
-                title={screen.label.replace(/_/g, " ")}
+                title={screen.label}
                 className={cn(
-                  "relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 font-code-sm text-code-sm transition-colors",
+                  "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
                   active
-                    ? "bg-primary-container/15 font-bold text-primary"
-                    : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface",
+                    ? "bg-white/5 font-medium text-primary"
+                    : "text-on-surface-variant hover:bg-white/5 hover:text-on-surface",
                 )}
               >
-                {active && (
-                  <span className="absolute bottom-1.5 left-0 top-1.5 w-1 rounded-r bg-primary-container shadow-[0_0_8px_rgb(249_115_22_calc(0.8_*_var(--accent-alpha)))]" />
-                )}
                 <span
                   className={cn(
-                    "material-symbols-outlined shrink-0 text-[18px]",
-                    active ? "text-primary-container" : "text-outline",
+                    "material-symbols-outlined shrink-0 text-[18px] transition-opacity",
+                    active ? "text-primary opacity-100" : "text-outline opacity-70",
                   )}
                 >
                   {screen.icon}
@@ -97,7 +94,7 @@ export function NavSidebar() {
           <span className="material-symbols-outlined text-[18px]">
             {collapsed ? "keyboard_double_arrow_right" : "keyboard_double_arrow_left"}
           </span>
-          {!collapsed && <span className="font-code-sm text-code-sm">Collapse</span>}
+          {!collapsed && <span className="text-sm">Collapse</span>}
         </button>
       </div>
     </nav>

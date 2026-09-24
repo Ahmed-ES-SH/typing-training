@@ -9,7 +9,7 @@ import { ScreenIdSchema } from "../lib/screens";
  * table's `app_settings` row. Every control persists immediately (debounced
  * — the design has no save button) and survives restart. Hydration happens
  * once at app boot; side effects (theme class, reduce-motion attribute,
- * accent-alpha CSS var) apply to the document root on every change so all
+ * editor-font tokens) apply to the document root on every change so all
  * screens and components follow instantly.
  */
 
@@ -34,7 +34,6 @@ export const AppSettingsSchema = z.object({
 
   /* Appearance. */
   theme: ThemeIdSchema.default("typekernel-dark"),
-  accentIntensity: z.number().int().min(0).max(100).default(70),
   editorFont: z.enum(["jetbrains-mono", "fira-code", "cascadia-code"]).default("jetbrains-mono"),
   reduceMotion: z.boolean().default(false),
 
@@ -74,7 +73,7 @@ interface SettingsState {
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Root side effects: theme token overrides, motion, accent glow strength. */
+/** Root side effects: theme token overrides, motion, editor font. */
 function applyDocumentSettings(settings: AppSettings): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
@@ -85,24 +84,17 @@ function applyDocumentSettings(settings: AppSettings): void {
   );
   root.classList.add(`theme-${settings.theme}`);
   root.dataset.motion = settings.reduceMotion ? "reduced" : "full";
-  // Accent glow scale: 1.0 at the design's default 70% intensity (0 at 0%,
-  // clamped by the browser above ~1.4 at 100%).
-  root.style.setProperty("--accent-alpha", String(settings.accentIntensity / 70));
-  // Editor font (§20): the bundled JetBrains Mono is the only selectable
-  // stack today; the token override is already wired for future bundling.
+  // Editor font (§20): applies to the typing buffer only (--font-code-lg) —
+  // UI chrome fonts stay on the Phase 1 Inter tokens. The bundled JetBrains
+  // Mono is the only selectable stack today; the override is already wired
+  // for future bundling.
   const fontStack =
     settings.editorFont === "fira-code"
       ? '"Fira Code", "JetBrains Mono", ui-monospace, monospace'
       : settings.editorFont === "cascadia-code"
         ? '"Cascadia Code", "JetBrains Mono", ui-monospace, monospace'
         : '"JetBrains Mono", ui-monospace, monospace';
-  for (const token of [
-    "--font-code-sm",
-    "--font-code-md",
-    "--font-code-lg",
-    "--font-label-sm",
-    "--font-code-current",
-  ]) {
+  for (const token of ["--font-code-lg", "--font-code-current"]) {
     root.style.setProperty(token, fontStack);
   }
 }

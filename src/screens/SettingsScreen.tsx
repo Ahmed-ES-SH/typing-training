@@ -10,6 +10,7 @@ import {
   ToggleRow,
 } from "../components/FormPrimitives";
 import { Modal, TypedConfirmModal } from "../components/Modal";
+import { StatusPill } from "../components/StatusPill";
 import { ACCURACY_GATE, WPM_GATE } from "../lib/curriculum/rules";
 import { seedCurriculum } from "../lib/curriculum/seed";
 import { statsRepo } from "../lib/db/repositories";
@@ -171,7 +172,7 @@ export default function SettingsScreen() {
         message:
           "replaced" in result
             ? "Backup restored — all local data replaced."
-            : "Modules merged into your library.",
+            : "Lessons merged into your library.",
       });
     } catch (error) {
       setImportState({
@@ -208,23 +209,20 @@ export default function SettingsScreen() {
     <main className="flex w-full flex-1 flex-col gap-space-base overflow-y-auto bg-surface p-space-sm sm:p-space-base">
       {/* Breadcrumb */}
       <div className="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant">
-        <span className="text-primary">~</span>
-        <span>/</span>
-        <span>settings</span>
-        <span className="text-outline">//</span>
-        <span>system_configuration</span>
+        <span className="text-primary">Settings</span>
+        <span className="text-outline-variant">/</span>
+        <span>Preferences</span>
       </div>
 
       {/* Hero */}
       <section className="relative w-full overflow-hidden rounded-xl bg-surface-container-low p-space-lg shadow-xl">
         <div className="pointer-events-none absolute -right-16 -top-16 h-72 w-72 rounded-full bg-primary-container/10 blur-3xl" />
         <div className="relative z-10">
-          <span className="mb-space-xs inline-flex items-center gap-1.5 rounded bg-surface-container-high px-space-xs py-space-2xs font-code-sm text-code-sm uppercase tracking-wider text-primary">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary-container animate-pulse" />
-            PREFERENCES // PERSISTED IN SQLITE
+          <span className="mb-space-xs inline-flex items-center gap-1.5 rounded-full border border-white/5 bg-surface-container-high px-2.5 py-0.5 text-xs font-medium text-primary">
+            Preferences • Saved locally
           </span>
           <h1 className="font-display-lg text-display-lg tracking-tight text-on-surface">
-            System Configuration
+            Settings
           </h1>
           <p className="mt-space-xs max-w-xl font-body-md text-body-md text-on-surface-variant">
             Every option is stored locally and applied instantly. No account, no
@@ -255,7 +253,7 @@ export default function SettingsScreen() {
           <div className="mt-space-sm rounded-lg border border-surface-container-highest/40 bg-surface-container-lowest px-space-sm py-2 font-code-sm text-code-sm text-on-surface-variant">
             <div className="mb-1 flex items-center gap-1.5 text-secondary">
               <span className="material-symbols-outlined text-[14px]">wifi_off</span>
-              <span className="font-bold">OFFLINE BUILD</span>
+              <span className="font-bold">Works offline</span>
             </div>
             <span>
               v{__APP_VERSION__} • schema v4 •{" "}
@@ -339,25 +337,6 @@ export default function SettingsScreen() {
                 />
               </SettingRow>
               <SettingRow
-                label="Accent intensity"
-                description="Glow strength on active/primary elements."
-              >
-                <div className="flex items-center gap-space-sm">
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={settings.accentIntensity}
-                    aria-label="Accent intensity"
-                    onChange={(event) => update({ accentIntensity: Number(event.target.value) })}
-                    className="w-40 accent-primary"
-                  />
-                  <span className="w-10 text-right font-code-md text-code-md text-primary">
-                    {settings.accentIntensity}%
-                  </span>
-                </div>
-              </SettingRow>
-              <SettingRow
                 label="Editor font"
                 description="Used for lesson buffers and code content."
               >
@@ -389,16 +368,14 @@ export default function SettingsScreen() {
                 label={
                   <>
                     Strict mode
-                    <span className="ml-1 rounded bg-primary-container/20 px-1 py-0.5 font-code-sm text-code-sm font-bold text-primary">
-                      GATE
+                    <span className="ml-1">
+                      <StatusPill tone="inProgress">Gate</StatusPill>
                     </span>
                   </>
                 }
-                description={`Unlock requirement: accuracy ≥ ${ACCURACY_GATE}% AND WPM > ${WPM_GATE} in one attempt. Non-negotiable values are marked GATE.`}
+                description={`Unlock requirement: accuracy ≥ ${ACCURACY_GATE}% AND WPM > ${WPM_GATE} in one attempt. Fixed values are marked.`}
               >
-                <span className="rounded bg-error-container/30 px-2 py-1 font-code-sm text-code-sm font-bold text-error">
-                  LOCKED
-                </span>
+                <StatusPill tone="locked">Locked</StatusPill>
               </SettingRow>
               <SettingRow
                 label="Backspace policy"
@@ -448,9 +425,9 @@ export default function SettingsScreen() {
                   value={settings.statsDefaultRange}
                   onChange={(statsDefaultRange) => update({ statsDefaultRange })}
                   options={[
-                    { id: "30d", label: "30 DAYS" },
-                    { id: "90d", label: "90 DAYS" },
-                    { id: "all", label: "ALL" },
+                    { id: "30d", label: "30 days" },
+                    { id: "90d", label: "90 days" },
+                    { id: "all", label: "All time" },
                   ]}
                 />
               </SettingRow>
@@ -463,8 +440,8 @@ export default function SettingsScreen() {
                   value={settings.heatmapWindow}
                   onChange={(heatmapWindow) => update({ heatmapWindow })}
                   options={[
-                    { id: "30d", label: "30 DAYS" },
-                    { id: "lifetime", label: "LIFETIME" },
+                    { id: "30d", label: "30 days" },
+                    { id: "lifetime", label: "Lifetime" },
                   ]}
                 />
               </SettingRow>
@@ -493,7 +470,7 @@ export default function SettingsScreen() {
                     settings. Zod-schema versioned.
                   </p>
                   <KernelButton onClick={() => void exportBackup()}>Export JSON</KernelButton>
-                  <p className="mt-space-sm font-code-sm text-[10px] uppercase tracking-wider text-outline">
+                  <p className="mt-space-sm text-xs text-on-surface-variant">
                     {settings.lastBackupAt !== null
                       ? `last backup ${new Date(settings.lastBackupAt).toLocaleString()}`
                       : "no backup yet"}
@@ -582,7 +559,7 @@ export default function SettingsScreen() {
               >
                 <span className="flex items-center gap-1 font-code-sm text-code-sm font-bold text-primary">
                   <span className="h-1.5 w-1.5 rounded-full bg-primary-container" />
-                  ALL LOCAL
+                  All local
                 </span>
               </SettingRow>
             </SectionCard>
@@ -606,7 +583,7 @@ export default function SettingsScreen() {
               </pre>
               <p className="text-error">
                 Restoring replaces EVERYTHING: progress, attempts, key statistics,
-                custom modules and settings. Type REPLACE to continue.
+                custom lessons and settings. Type REPLACE to continue.
               </p>
             </div>
           }
@@ -680,7 +657,7 @@ export default function SettingsScreen() {
           description={
             <p>
               The SQLite database is deleted and re-created from the migrations:
-              progress, attempts, key statistics, custom modules and settings are
+              progress, attempts, key statistics, custom lessons and settings are
               gone. The curriculum is re-seeded automatically. Export a backup
               first — this cannot be undone.
             </p>

@@ -4,8 +4,10 @@ import { getLevelMeta, getLesson } from "../content";
 import { MasteryGauge, tierLabel } from "../components/MasteryGauge";
 import { Sparkline } from "../components/Sparkline";
 import { StatCard } from "../components/StatCard";
+import { StatusPill } from "../components/StatusPill";
+import { AttemptResultPill } from "../components/AttemptResultPill";
 import { ConsistencyStrip } from "../components/ConsistencyStrip";
-import { evaluateAttempt, ACCURACY_GATE } from "../lib/curriculum/rules";
+import { ACCURACY_GATE } from "../lib/curriculum/rules";
 import { attemptsRepo, progressRepo, statsRepo } from "../lib/db/repositories";
 import { cn } from "../lib/cn";
 import {
@@ -66,20 +68,6 @@ function radarTone(accuracy: number): string {
   if (accuracy < 85) return "bg-error";
   if (accuracy < 93) return "bg-secondary";
   return "bg-primary";
-}
-
-function resultChip(completed: boolean, wpm: number, accuracy: number) {
-  const passed = evaluateAttempt({ completed, accuracy, wpm }) === "PASS";
-  return (
-    <span
-      className={cn(
-        "rounded px-2 py-0.5 font-code-sm text-[10px] font-bold tracking-wider",
-        passed ? "bg-secondary-container/40 text-secondary" : "bg-error-container text-error",
-      )}
-    >
-      {passed ? "PASS" : "FAIL"}
-    </span>
-  );
 }
 
 /** Dev-only demo-history launcher (§3.6) — dynamic import keeps the seeder
@@ -223,7 +211,7 @@ export default function DashboardScreen() {
         <div className="max-w-md rounded-xl bg-surface-container-low p-space-lg text-center shadow-xl">
           <span className="material-symbols-outlined text-[36px] text-error">database</span>
           <h2 className="mt-2 font-headline-lg text-headline-lg text-on-surface">
-            Operator Status Offline
+            Database Offline
           </h2>
           <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
             {dbError ?? dbErrorMessage}
@@ -237,7 +225,7 @@ export default function DashboardScreen() {
     return (
       <main className="flex w-full flex-1 items-center justify-center bg-surface">
         <span className="animate-pulse font-code-sm text-code-sm uppercase tracking-widest text-outline">
-          Loading operator status…
+          Loading your progress…
         </span>
       </main>
     );
@@ -263,17 +251,14 @@ export default function DashboardScreen() {
             <div className="flex flex-wrap items-center gap-2 font-code-sm text-code-sm">
               <span className="flex items-center gap-1.5 rounded bg-surface-container-high px-2 py-0.5 font-bold text-primary">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary-container" />
-                OPERATOR ONLINE // SESSION {fmtInt(progress.totalAttempts)}
+                {fmtInt(progress.totalAttempts)} sessions completed
               </span>
-              <span className="text-outline-variant">•</span>
-              <span className="text-on-surface-variant">LOCAL TRAINING PIPELINE</span>
             </div>
             <h1 className="mt-3 font-display-lg text-4xl font-bold tracking-tight text-on-surface">
-              Welcome back, Operator.
+              Welcome back
             </h1>
             <p className="mt-1 max-w-xl font-body-md text-body-md text-on-surface-variant">
-              Your neuromuscular buffer is warm. Resume the active module or run
-              a weakness drill to keep the streak alive.
+              Pick up where you left off or practice your weak keys.
             </p>
             <div className="mt-space-base flex flex-wrap gap-space-sm">
               <button
@@ -334,7 +319,7 @@ export default function DashboardScreen() {
                 {progress.completedLessons} / {progress.totalLessons} Mastered
               </p>
               <p className="font-code-sm text-code-sm text-on-surface-variant">
-                {fmtInt(masteredRemaining)} modules remaining
+                {fmtInt(masteredRemaining)} lessons remaining
               </p>
               <div className="mt-2 h-1.5 w-40 overflow-hidden rounded-full bg-surface-container-highest">
                 <div
@@ -351,19 +336,16 @@ export default function DashboardScreen() {
       <div className="grid grid-cols-1 gap-space-md xl:grid-cols-3">
         <div className="flex flex-col gap-space-md xl:col-span-2">
           {/* Active module card */}
-          <section className="relative flex flex-col overflow-hidden rounded-xl border border-primary-container/50 bg-surface-container-low shadow-2xl">
-            <div className="absolute bottom-0 left-0 top-0 w-1.5 bg-primary-container shadow-[0_0_12px_rgb(249_115_22_calc(0.9_*_var(--accent-alpha)))]" />
+          <section className="flex flex-col rounded-xl border border-surface-container-highest/40 bg-surface-container-low shadow-sm">
             {currentLesson ? (
-              <div className="flex flex-col gap-space-md p-space-lg pl-space-xl">
+              <div className="flex flex-col gap-space-md p-space-lg">
                 <div className="flex flex-wrap items-start justify-between gap-space-md">
                   <div>
                     <div className="flex items-center gap-2 font-code-sm text-code-sm">
                       <span className="font-bold tracking-wider text-primary">
-                        ACTIVE MODULE // {moduleNumber(currentLesson.level, currentLesson.orderIndex)}
+                        Current Lesson: {moduleNumber(currentLesson.level, currentLesson.orderIndex)}
                       </span>
-                      <span className="rounded bg-primary-container px-1.5 py-0.5 font-label-sm text-[10px] font-bold uppercase tracking-wider text-on-primary-container">
-                        In Progress
-                      </span>
+                      <StatusPill tone="inProgress">In progress</StatusPill>
                     </div>
                     <h2 className="mt-1.5 font-headline-lg text-headline-lg text-on-surface">
                       {currentLesson.title}
@@ -383,10 +365,10 @@ export default function DashboardScreen() {
                     </span>
                     {data.currentLessonLast && (
                       <span className="block font-code-sm text-code-sm text-on-surface-variant">
-                        {fmt1(data.currentLessonLast.accuracy)}% ACC{" "}
+                        {fmt1(data.currentLessonLast.accuracy)}% accuracy{" "}
                         {data.currentLessonLast.accuracy >= ACCURACY_GATE
                           ? "(gate met)"
-                          : `(NEEDS ${ACCURACY_GATE}%)`}
+                          : `(needs ${ACCURACY_GATE}%)`}
                       </span>
                     )}
                   </div>
@@ -429,7 +411,7 @@ export default function DashboardScreen() {
                 </div>
               </div>
             ) : (
-              <div className="p-space-lg pl-space-xl text-center">
+              <div className="p-space-lg text-center">
                 <p className="font-headline-md text-headline-md text-on-surface">
                   Curriculum Complete
                 </p>
@@ -454,22 +436,22 @@ export default function DashboardScreen() {
                 onClick={() => useUiStore.getState().navigate("statistics")}
                 className="font-code-sm text-code-sm font-bold tracking-wider text-primary hover:text-primary-fixed"
               >
-                VIEW ALL →
+                View all →
               </button>
             </div>
             {recent.length === 0 ? (
               <p className="rounded-lg border border-dashed border-surface-container-highest bg-surface-container-lowest/50 px-space-base py-space-lg text-center font-code-sm text-code-sm text-outline">
-                No attempts yet — finish your first lesson to populate the ledger.
+                No attempts yet — finish your first lesson to see it here.
               </p>
             ) : (
               <table className="w-full text-left font-code-md text-code-md">
                 <thead>
                   <tr className="font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
-                    <th className="pb-2 pr-2 font-semibold">Module</th>
+                    <th className="pb-2 pr-2 font-semibold">Lesson</th>
                     <th className="pb-2 pr-2 text-right font-semibold">WPM</th>
                     <th className="pb-2 pr-2 text-right font-semibold">Accuracy</th>
                     <th className="pb-2 pr-2 text-right font-semibold">Errors</th>
-                    <th className="pb-2 pr-2 text-right font-semibold">Backsp</th>
+                    <th className="pb-2 pr-2 text-right font-semibold">Backspaces</th>
                     <th className="pb-2 pr-2 text-center font-semibold">Result</th>
                     <th className="pb-2 text-right font-semibold">When</th>
                   </tr>
@@ -478,7 +460,7 @@ export default function DashboardScreen() {
                   {recent.map((attempt) => (
                     <tr
                       key={attempt.id}
-                      className="border-t border-surface-container-highest/30"
+                      className="border-t border-white/5"
                     >
                       <td className="py-2 pr-2 text-on-surface">
                         <RecentAttemptModule lessonId={attempt.lessonId} />
@@ -494,7 +476,7 @@ export default function DashboardScreen() {
                         {attempt.backspaceCount}
                       </td>
                       <td className="py-2 pr-2 text-center">
-                        {resultChip(attempt.completed, attempt.wpm, attempt.accuracy)}
+                        <AttemptResultPill completed={attempt.completed} wpm={attempt.wpm} accuracy={attempt.accuracy} />
                       </td>
                       <td className="py-2 text-right text-on-surface-variant">
                         {fmtRelative(attempt.finishedAt, now)}
@@ -524,9 +506,7 @@ export default function DashboardScreen() {
               </h3>
               <span className="flex items-center gap-2">
                 {today.metAll && (
-                  <span className="rounded bg-primary-container/25 px-1.5 py-0.5 font-code-sm text-[10px] font-bold tracking-wider text-primary">
-                    MET ✓
-                  </span>
+                  <StatusPill tone="mastered">Met ✓</StatusPill>
                 )}
                 <span className="font-code-sm text-code-sm font-bold text-outline">
                   {fmtDayStamp(now)}
@@ -694,13 +674,14 @@ export default function DashboardScreen() {
       <footer className="flex flex-wrap items-center justify-between gap-2 px-1 py-1 font-code-sm text-[10px] uppercase tracking-wider text-outline">
         <span className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-secondary" />
-          ALL SYSTEMS LOCAL // ZERO NETWORK DEPENDENCY
+          All data stored locally
         </span>
         <span className="flex items-center gap-3">
           <DemoSeedButton />
           <span>
-            DB: {data.dbSizeBytes !== null ? `${fmtInt(data.dbSizeBytes / 1024 / 1024)} MB` : "—"} • LAST
-            BACKUP:{" "}
+            Database:{" "}
+            {data.dbSizeBytes !== null ? `${fmtInt(data.dbSizeBytes / 1024 / 1024)} MB` : "—"} •
+            Last backup:{" "}
             {lastBackupAt !== null ? new Date(lastBackupAt).toLocaleDateString() : "—"}
           </span>
         </span>
@@ -709,7 +690,7 @@ export default function DashboardScreen() {
   );
 }
 
-/** Module cell of the recent-attempts table ("3.14 Struct Arrow & Member"). */
+/** Lesson cell of the recent-attempts table ("3.14 Struct Arrow & Member"). */
 function RecentAttemptModule({ lessonId }: { lessonId: string }) {
   // Resolved from the bundled curriculum (cheap map lookup, no extra query).
   const lesson = getLesson(lessonId);

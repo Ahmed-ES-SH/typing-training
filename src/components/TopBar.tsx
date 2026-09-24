@@ -7,12 +7,10 @@ import { useStatsStore } from "../stores/useStatsStore";
 import { useUiStore } from "../stores/useUiStore";
 
 /**
- * Shared 40px top status bar, matching the header block of every
- * `screens/*_typekernel/code.html` design. The streak / WPM read-outs are
- * LIVE values (SQL-backed services, re-read when the stats caches
- * invalidate) so the chrome can never contradict the Dashboard panels —
- * with graceful "—" placeholders on a fresh database. The traffic dots are
- * decorative; native Tauri window decorations remain enabled.
+ * Shared 40px top status bar. The streak / WPM read-outs are LIVE values
+ * (SQL-backed services, re-read when the stats caches invalidate) so the
+ * chrome can never contradict the Dashboard panels — with graceful "—"
+ * placeholders on a fresh database.
  */
 export function TopBar() {
   const activeScreen = useUiStore((s) => s.activeScreen);
@@ -49,43 +47,38 @@ export function TopBar() {
   return (
     <header className="z-40 flex h-10 shrink-0 items-center justify-between border-b border-surface-container-highest/40 bg-surface-container-lowest/95 px-space-base shadow-[0_1px_8px_rgba(0,0,0,0.5)] backdrop-blur-xl">
       <div className="flex items-center gap-space-sm">
-        {/* Decorative traffic-dot cluster (native decorations stay enabled) */}
-        <div aria-hidden="true" className="flex items-center gap-space-xs">
-          <div className="h-3 w-3 cursor-pointer rounded-full bg-surface-container-highest transition-colors hover:bg-error" />
-          <div className="h-3 w-3 cursor-pointer rounded-full bg-surface-container-highest transition-colors hover:bg-secondary" />
-          <div className="h-3 w-3 cursor-pointer rounded-full bg-surface-container-highest transition-colors hover:bg-primary" />
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-on-surface">
+          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />
+          TypeKernel
         </div>
 
-        <div className="flex items-center gap-space-xs rounded bg-surface-container px-space-xs py-space-2xs font-code-sm text-code-sm text-on-surface-variant">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary-container" />
-          TAURI v2.1.0-OFFLINE
-        </div>
-
-        <div className="hidden items-center gap-space-2xs rounded bg-surface-container-high px-space-xs py-space-2xs font-code-sm text-code-sm text-primary md:flex">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary-container" />
-          <span>{label.toUpperCase()}</span>
-        </div>
-
-        <span className="material-symbols-outlined text-[15px] text-primary-container">
-          {icon}
+        <span aria-hidden="true" className="text-sm text-outline/60">
+          /
         </span>
+
+        <div className="hidden items-center gap-space-xs text-sm text-on-surface-variant md:flex">
+          <span className="material-symbols-outlined text-[15px] text-outline">
+            {icon}
+          </span>
+          <span>{label}</span>
+        </div>
       </div>
 
       <div className="flex items-center gap-space-md">
-        <div className="hidden items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant sm:flex">
-          <span className="material-symbols-outlined text-[15px] text-primary-container">
+        <div className="hidden items-center gap-space-xs text-xs text-on-surface-variant sm:flex">
+          <span className="material-symbols-outlined text-[15px] text-primary">
             local_fire_department
           </span>
-          <span className="text-primary">
-            {streak !== null && streak > 0 ? `${streak}-DAY STREAK` : "— DAY STREAK"}
+          <span>
+            {streak !== null && streak > 0 ? `${streak}-day streak` : "No streak yet"}
           </span>
         </div>
-        <div className="hidden h-3.5 w-px bg-surface-container-highest sm:block" />
-        <div className="flex items-center gap-space-xs font-code-sm text-code-sm text-on-surface-variant">
+        <div className="hidden h-3.5 w-px bg-white/10 sm:block" />
+        <div className="flex items-center gap-space-xs text-xs text-on-surface-variant">
           <span className="material-symbols-outlined text-[14px] text-primary">
             bolt
           </span>
-          <span>{avgWpm !== null ? `${Math.round(avgWpm)} WPM AVG` : "— WPM AVG"}</span>
+          <span>{avgWpm !== null ? `${Math.round(avgWpm)} WPM avg` : "— WPM avg"}</span>
         </div>
         <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary">
           <span className="material-symbols-outlined text-[16px] text-on-primary">
