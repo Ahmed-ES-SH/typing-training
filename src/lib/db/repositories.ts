@@ -442,6 +442,37 @@ export const attemptsRepo = {
       .orderBy(desc(lessonAttempts.finishedAt));
     return rows.map((row) => AttemptRowSchema.parse(row));
   },
+
+  /**
+   * Finished attempts of EVERY kind at or after `fromTs` — the Daily
+   * Routine's progress input (UX plan §5.1). Three thin columns, so a
+   * bounded scan rides `idx_lesson_attempts_finished_at` instead of parsing
+   * metric rows it never reads (drill rows keep their NULL lesson_id).
+   */
+  async finishedSince(
+    fromTs: number,
+  ): Promise<Array<{ kind: AttemptKind; finishedAt: number; lessonId: string | null }>> {
+    const db = await getDb();
+    const rows = await db
+      .select({
+        kind: lessonAttempts.kind,
+        finishedAt: lessonAttempts.finishedAt,
+        lessonId: lessonAttempts.lessonId,
+      })
+      .from(lessonAttempts)
+      .where(
+        and(
+          eq(lessonAttempts.completed, true),
+          gte(lessonAttempts.finishedAt, fromTs),
+        ),
+      )
+      .orderBy(asc(lessonAttempts.finishedAt));
+    return rows.map((row) => ({
+      kind: row.kind,
+      finishedAt: Number(row.finishedAt),
+      lessonId: row.lessonId,
+    }));
+  },
 };
 
 /* ---------------------------------------------------------------------------

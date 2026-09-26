@@ -36,6 +36,13 @@ export const AppSettingsSchema = z.object({
   theme: ThemeIdSchema.default("typekernel-dark"),
   editorFont: z.enum(["jetbrains-mono", "fira-code", "cascadia-code"]).default("jetbrains-mono"),
   reduceMotion: z.boolean().default(false),
+  /** UX plan §4.1.3 — Zen / Focus Mode (F, Ctrl+Shift+F) on the session. */
+  zenMode: z.boolean().default(false),
+  /** UX plan §4.1.4 — faint `·` indent dots and `⏎` newline markers. */
+  whitespaceGlyphs: z.boolean().default(true),
+  /** UX plan §6.1 — width the detabifier writes for each pasted `\t`.
+   *  2 matches the curriculum's dominant 2-space indentation. */
+  tabSize: z.union([z.literal(2), z.literal(4)]).default(2),
 
   /* Training preferences. Strict mode is §8 product law — not a setting. */
   backspacePolicy: z.enum(["counted", "free", "forbidden"]).default("counted"),

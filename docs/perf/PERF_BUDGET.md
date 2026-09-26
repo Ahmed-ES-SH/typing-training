@@ -8,21 +8,24 @@ below is produced by a checked-in harness — re-run, don't trust.
 | Cold start → interactive shell ≤ 1.5 s | Instrumented, pending target-hardware run (see §1) | `performance.mark` chain in `src/main.tsx` + `src/App.tsx`, dev-logged |
 | First keystroke echo < 16 ms (one frame) | ~0.03 ms/key engine-side (33,903 keys/s incl. metrics) | `src/lib/engine/throughput.test.ts` |
 | Statistics/Dashboard interactive < 300 ms | Queries index-backed (µs–ms at 2k-row volume); wall-clock pending target run | `src/lib/db/indexAudit.test.ts` |
-| Idle CPU ≈ 0 (no timers when not in session) | 1 interval site, stopped outside sessions (audit §4) | code audit, `rg setInterval` |
+| Idle CPU ≈ 0 (no timers when not in session) | 2 interval sites, both session-scoped and stopped outside sessions (audit §4) | code audit, `rg setInterval` |
 | RSS ≤ 150 MB steady-state | Pending target-hardware run (see §1) | procedure in §1 |
 | DB write batched per session finish | 1 multi-row key upsert + 1 attempt INSERT + 1 session UPDATE | `useSessionStore.persistFinishedSession` |
-| Startup chunk < 400 KB gzip | **183.5 KB gzip** entry; recharts lazy (99.9 KB chart chunk) | `pnpm perf:budget` (this build) |
+| Startup chunk < 400 KB gzip | **199.6 KB gzip** entry; recharts lazy (99.9 KB chart chunk) | `pnpm perf:budget` (this build) |
 
-## 1. Startup & bundle (measured 2026-09-06, `pnpm build` + `pnpm perf:budget`)
+## 1. Startup & bundle (measured 2026-09-26, `pnpm build` + `pnpm perf:budget`)
 
 ```
 [perf:budget] entry chunks (before first paint):
-  /assets/index-*.js — 629.8 KB (183.5 KB gzip)
+  /assets/index-*.js — 689.0 KB (199.6 KB gzip)
 [perf:budget] lazy chunks (fetched on navigation):
   assets/CartesianChart-*.js — 332.5 KB (99.9 KB gzip)
   assets/SparklineChart-*.js — 15.2 KB (5.6 KB gzip)
-  assets/StatisticsScreen-*.js — 43.1 KB (12.7 KB gzip)
-  assets/WeaknessTrainingScreen-*.js — 22.5 KB (6.7 KB gzip)
+  assets/StatisticsScreen-*.js — 43.1 KB (12.6 KB gzip)
+  assets/WeaknessTrainingScreen-*.js — 27.6 KB (7.8 KB gzip)
+  assets/XAxis-*.js — 27.3 KB (8.2 KB gzip)
+  assets/window-*.js — 14.8 KB (3.7 KB gzip)
+  assets/graphicalItemSelectors-*.js — 0.4 KB (0.2 KB gzip)
 ```
 
 - Entry stays chart-free: Statistics + Weakness Training are `React.lazy`
@@ -82,13 +85,15 @@ Disposition per query (plan §3.4):
 
 ## 4. Idle CPU / background work (audit)
 
-- Exactly one `setInterval` site in shipped code: the 200 ms session tick
-  (`src/stores/useSessionStore.ts`), started on `startLesson`/`startDrill`
-  and stopped on finish/abandon/reset. No timers run outside an active
-  session; `TopBar`/stats re-query only on data invalidation, never on a
-  poll.
-- `setTimeout` sites are persist/validation debounces (settings, goals,
-  custom-lesson form) — one-shot, never periodic.
+- Exactly two `setInterval` sites in shipped code, both session-scoped: the
+  200 ms session tick (`src/stores/useSessionStore.ts`), started on
+  `startLesson`/`startDrill` and stopped on finish/abandon/reset, and the
+  weakness set-summary countdown (`src/screens/WeaknessTrainingScreen.tsx`),
+  cleared on unmount and on every phase change. No timers run outside an
+  active session; `TopBar`/stats re-query only on data invalidation, never
+  on a poll.
+- `setTimeout` sites are persist/validation debounces plus the §6.1 tab-badge
+  auto-clear (settings, goals, custom-lesson form) — one-shot, never periodic.
 - **Zero network handles at runtime:** no `fetch`/`WebSocket` in shipped
   code (the only URL is the user-clicked "Check for updates" opener;
   `fetch(` strings elsewhere are lesson *typing content*, never

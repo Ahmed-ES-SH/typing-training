@@ -1,3 +1,4 @@
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { cn } from "../lib/cn";
@@ -143,7 +144,11 @@ export function ToggleRow({
 
 /* ------------------------------- pill groups ------------------------------ */
 
-/** Segmented control of the design (theme pills, backspace policy, launch). */
+/** Segmented control of the design (theme pills, backspace policy, launch).
+ *  The active pill is a measured, sliding indicator (UX plan §6.2): it is
+ *  positioned from the checked button's own geometry, so the resting
+ *  position is computed — under reduce-motion the transition dies but the
+ *  indicator still lands on the right option. */
 export function PillGroup<T extends string>({
   value,
   options,
@@ -157,12 +162,58 @@ export function PillGroup<T extends string>({
   disabledValues?: T[];
   label: string;
 }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
+
+  // Re-measure after every commit (value change, re-counted labels, layout)
+  // and bail out when the geometry is unchanged so this never loops.
+  const measure = () => {
+    const active = containerRef.current?.querySelector<HTMLButtonElement>(
+      '[role="radio"][aria-checked="true"]',
+    );
+    if (active === undefined || active === null) {
+      setIndicator((prev) => (prev === null ? prev : null));
+      return;
+    }
+    const left = active.offsetLeft;
+    const width = active.offsetWidth;
+    setIndicator((prev) =>
+      prev !== null && prev.left === left && prev.width === width
+        ? prev
+        : { left, width },
+    );
+  };
+
+  useLayoutEffect(() => {
+    measure();
+  });
+
+  // Local fonts can land after first paint and shift the pill metrics —
+  // one async re-measure once they are ready.
+  useEffect(() => {
+    let cancelled = false;
+    document.fonts.ready.then(() => {
+      if (!cancelled) measure();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div
+      ref={containerRef}
       role="radiogroup"
       aria-label={label}
-      className="flex items-center gap-1 rounded-lg bg-surface-container p-1 font-label-sm text-label-sm"
+      className="relative flex items-center gap-1 rounded-lg bg-surface-container p-1 font-label-sm text-label-sm"
     >
+      {indicator !== null && indicator.width > 0 && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-1 left-0 z-0 rounded bg-primary-container transition-all duration-150"
+          style={{ width: indicator.width, transform: `translateX(${indicator.left}px)` }}
+        />
+      )}
       {options.map((option) => {
         const disabled = disabledValues?.includes(option.id) ?? false;
         return (
@@ -174,9 +225,9 @@ export function PillGroup<T extends string>({
             disabled={disabled}
             onClick={() => onChange(option.id)}
             className={cn(
-              "rounded px-space-sm py-1 transition-colors",
+              "relative z-10 rounded px-space-sm py-1 transition-colors",
               value === option.id
-                ? "bg-primary-container font-bold text-on-primary-container"
+                ? "font-bold text-on-primary-container"
                 : "text-on-surface-variant hover:text-on-surface",
               disabled && "cursor-not-allowed opacity-40 hover:text-on-surface-variant",
             )}

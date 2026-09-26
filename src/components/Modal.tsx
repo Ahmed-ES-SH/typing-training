@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { KernelButton } from "./FormPrimitives";
@@ -8,7 +8,22 @@ import { cn } from "../lib/cn";
  * Terminal-modal dialog shell (Phase 7) — the confirm/report surface used by
  * Custom Lessons (delete confirm, import report) and Settings (typed-RESET
  * danger zone). Backdrop click cancels; Escape cancels.
+ *
+ * The dialog owns the keyboard while open (same contract as ShortcutsModal):
+ * focus enters it on mount and returns to the opener on close, Tab cycles
+ * inside it in the CAPTURE phase (focus can never wrap out to the TopBar
+ * traffic dots), and Escape is claimed there with `stopImmediatePropagation`
+ * so the screens' own bubble-phase Escape handlers never act behind a modal.
+ * With several overlays stacked, only the LAST `[role="dialog"]` in document
+ * order (the top sheet/palette) reacts — a buried modal must not swallow the
+ * Esc or Tab that the overlay opened after it owns.
  */
+
+const FOCUSABLE_SELECTOR =
+  "button:not([disabled]), [href], input:not([disabled]), " +
+  "select:not([disabled]), textarea:not([disabled]), " +
+  '[tabindex]:not([tabindex="-1"])';
+
 export function Modal({
   title,
   children,
@@ -22,15 +37,83 @@ export function Modal({
   actions?: ReactNode;
   tone?: "default" | "danger";
 }) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  // The title is a ReactNode, so the dialog is labelled by its visible <h2>
+  // instead of a copyable aria-label string (no id collisions when stacked).
+  const titleId = useId();
+
+  // Focus enters the dialog on the next frame — but never steals from an
+  // element already inside it (TypedConfirmModal's autoFocus input owns
+  // focus). The opener gets focus back on unmount.
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const frame = requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      if (dialog === null) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && dialog.contains(active)) return;
+      dialog.focus();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (
+        previous !== null &&
+        previous !== document.body &&
+        previous.isConnected
+      ) {
+        previous.focus();
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // Capture-phase keyboard shield (see the class doc): Escape cancels before
+  // any screen listener sees it, Tab cycles focus inside the dialog.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const root = dialogRef.current;
+      if (root === null) return;
+      // Stacked overlays: capture listeners fire in registration order, so a
+      // dialog opened BEFORE the shortcuts sheet / command palette would claim
+      // Esc (and trap Tab) underneath them. Only the topmost dialog — the last
+      // one in document order — owns the keyboard.
+      const dialogs = document.querySelectorAll(
+        '[role="dialog"][aria-modal="true"]',
+      );
+      if (dialogs[dialogs.length - 1] !== root) return;
+      if (event.key === "Escape") {
+        event.stopImmediatePropagation();
+        onClose();
+        return;
+      }
+      if (event.key === "Tab") {
+        // Always consumed: an unconsumed Tab would walk focus out to the
+        // TopBar traffic dots, where Space/Enter quits the app — even for a
+        // dialog whose only focusable is its own container.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const items = Array.from(
+          root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+        );
+        if (items.length === 0) {
+          root.focus();
+          return;
+        }
+        const current = items.indexOf(document.activeElement as HTMLElement);
+        const delta = event.shiftKey ? -1 : 1;
+        const next =
+          current === -1
+            ? delta > 0
+              ? items[0]
+              : items[items.length - 1]
+            : items[(current + delta + items.length) % items.length];
+        next?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [onClose]);
 
   return (
@@ -39,11 +122,14 @@ export function Modal({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         className={cn(
-          "w-full max-w-lg overflow-hidden rounded-xl border bg-surface-container-low shadow-2xl",
+          "w-full max-w-lg overflow-hidden rounded-xl border bg-surface-container-low shadow-2xl focus:outline-none",
           tone === "danger" ? "border-error/50" : "border-primary-container/40",
         )}
       >
@@ -64,7 +150,9 @@ export function Modal({
             >
               {tone === "danger" ? "dangerous" : "terminal"}
             </span>
-            <h2 className="font-headline-md text-headline-md text-on-surface">{title}</h2>
+            <h2 id={titleId} className="font-headline-md text-headline-md text-on-surface">
+              {title}
+            </h2>
           </div>
           <button
             type="button"

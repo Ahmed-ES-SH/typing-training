@@ -23,7 +23,8 @@ import {
  * extends the fs scope at runtime. No static broad grants exist.
  */
 
-function inTauri(): boolean {
+/** `true` inside the Tauri shell; `false` in browser dev (no native dialogs). */
+export function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 

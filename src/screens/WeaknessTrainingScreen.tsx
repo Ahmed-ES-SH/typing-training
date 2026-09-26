@@ -26,29 +26,42 @@ import {
   buildDrillPlan,
   getDrillConfig,
   newDrillSeed,
-  type DrillPlan,
 } from "../lib/intelligence/drillService";
 import type { DrillConfig } from "../lib/schemas";
 import { fmt1, fmtClock } from "../lib/format";
 import { liveMetrics } from "../lib/engine/metrics";
+import {
+  clearMicroDrillReturn,
+  eliminationMessage,
+  readMicroDrillReturn,
+  type MicroDrillReturnHint,
+} from "../lib/intelligence/microDrill";
+import { isEditableFocused, releaseChromeFocus } from "../lib/session/focusShield";
+import { isInstantReset } from "../lib/session/goldenLoop";
 import { useSessionStore } from "../stores/useSessionStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { useUiStore } from "../stores/useUiStore";
 
 /**
- * Weakness Training screen (PRD §15; Phase 6 plan §3.6) — implemented from
- * `screens/weakness_training_typekernel/code.html`:
+ * Weakness Training screen (PRD §15; Phase 6 plan §3.6; Phase 4 §7.1/§7.2)
+ * — implemented from `screens/weakness_training_typekernel/code.html`:
  *
  * - Queue sidebar: Target Elimination Queue with per-key cards, evolution
  *   chain and the read-only Drill Configuration block (defaults per design;
  *   editing UI arrives in Phase 7).
  * - Main drill area: generated sets typed through the Phase 3 engine
  *   (via useSessionStore drill mode), focus-key accounting, set summaries.
+ * - Rapid-fire sets (§7.2): Space/Enter advance from a set summary, a 1.5 s
+ *   auto-advance countdown (skipable by the same keys) and the target
+ *   elimination line (`Target { : Eliminated! Accuracy 78% → 96%`).
+ * - Micro-drill return (§7.1): finishing a drill launched from Results
+ *   offers `[Enter] Return to Results` until the hint is consumed.
  * - Target Recovery Curves: 30-day accuracy per queued key (Recharts) with
  *   display-only linear-regression projections.
  *
  * The screen (and recharts) is lazy-loaded from App; ESC returns to the
- * dashboard and abandons the running drill.
+ * dashboard and abandons the running drill (never while a palette/editor
+ * field owns the keystroke — §4.1.4 focus shield).
  */
 
 const GRID = "#31353f";
@@ -62,7 +75,32 @@ const TOOLTIP_STYLE = {
 
 const CURVE_COLORS = ["#ffb4ab", "#ff6d2c", "#d97722", "#ffb783", "#f97316", "#9d4300"];
 
+/** §7.2 — auto-advance delay after a set summary (Space/Enter skips it). */
+const SET_ADVANCE_MS = 1500;
+/** §7.2 — countdown tick granularity (drives the shrinking bar/label). */
+const COUNTDOWN_TICK_MS = 100;
+
+/**
+ * §4.1.4 — true while a modal overlay (Shortcuts sheet, Command Palette,
+ * confirm dialog) covers the drill. `isEditableFocused()` alone misses the
+ * shortcuts sheet, whose dialog box holds focus without being editable —
+ * keys would then act on the drill *behind* the overlay.
+ */
+const modalOpen = (): boolean =>
+  document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+
 /* Time rendering comes from the shared `lib/format` util (Phase 8 §3.5). */
+
+/**
+ * Screen-level failure, split by kind: only an `analysis` failure can be
+ * retried by reloading the analyzer — a drill start/regenerate rejection must
+ * show its message WITHOUT the banner's (misleading) Retry button.
+ */
+interface ScreenError {
+  message: string;
+  kind: "analysis" | "drill";
+}
+
 
 /* ---------------------------------------------------------------------------
  * Queue sidebar
@@ -154,6 +192,7 @@ function AdaptiveGate({ children }: { children: React.ReactNode }) {
 function QueueSidebar({
   analysis,
   config,
+  error,
   drillNumber,
   onStart,
   busy,
@@ -161,6 +200,9 @@ function QueueSidebar({
 }: {
   analysis: WeaknessAnalysis | null;
   config: DrillConfig | null;
+  /** Analysis failure (banner above carries the Retry button) — keeps the
+   * queue off the eternal "Analyzing…" pulse when the analyzer rejects. */
+  error: string | null;
   drillNumber: number;
   onStart: () => void;
   busy: boolean;
@@ -207,9 +249,21 @@ function QueueSidebar({
 
       <div className="flex flex-1 flex-col gap-space-xs overflow-y-auto p-space-sm">
         {analysis === null ? (
-          <p className="animate-pulse py-6 text-center font-code-sm text-code-sm text-outline">
-            Analyzing key statistics…
-          </p>
+          error !== null ? (
+            <div className="rounded-lg border border-dashed border-error/40 bg-error-container/20 p-space-base text-center">
+              <p className="font-code-sm text-code-sm font-bold uppercase tracking-wider text-error">
+                Analysis failed
+              </p>
+              <p className="mt-1 font-code-sm text-code-sm text-on-surface-variant">
+                {error} — retry from the banner above, or come back after
+                your next session.
+              </p>
+            </div>
+          ) : (
+            <p className="animate-pulse py-6 text-center font-code-sm text-code-sm text-outline">
+              Analyzing key statistics…
+            </p>
+          )
         ) : targets.length === 0 ? (
           <div className="rounded-lg border border-dashed border-surface-container-highest bg-surface-container-lowest/50 p-space-base text-center">
             <p className="font-code-sm text-code-sm font-bold uppercase tracking-wider text-outline">
@@ -488,10 +542,14 @@ function RecoveryCurves({ analysis }: { analysis: WeaknessAnalysis | null }) {
             {analysis?.targets
               .filter((t) => t.state !== "eliminated")
               .map((target) => {
+                // The legend lists every queued key, the chart plots only the
+                // first 6 — a key past that window has no curve (indexOf === -1)
+                // and therefore no dot (CURVE_COLORS[-1] would be undefined).
+                const seriesIndex = series.keys.indexOf(target.key);
                 const color =
-                  CURVE_COLORS[
-                    series.keys.indexOf(target.key) % CURVE_COLORS.length
-                  ];
+                  seriesIndex >= 0
+                    ? CURVE_COLORS[seriesIndex % CURVE_COLORS.length]
+                    : undefined;
                 const projection = series.projections[target.key];
                 return (
                   <div
@@ -499,7 +557,9 @@ function RecoveryCurves({ analysis }: { analysis: WeaknessAnalysis | null }) {
                     className="flex items-center justify-between rounded bg-surface-container-lowest px-2 py-1.5 font-code-sm text-code-sm"
                   >
                     <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+                      {color !== undefined && (
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+                      )}
                       <span className="text-on-surface">{target.key}</span>
                       <span className="text-on-surface-variant">
                         {projection && projection.slopePerDay > 0
@@ -539,8 +599,17 @@ export default function WeaknessTrainingScreen() {
   const [config, setConfig] = useState<DrillConfig | null>(null);
   const [drillNumber, setDrillNumber] = useState(1);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const planRef = useRef<DrillPlan | null>(null);
+  const [error, setError] = useState<ScreenError | null>(null);
+  /**
+   * §7.2 — key held while Space/Enter advanced a set: its auto-repeat is
+   * swallowed by the typing feed until the key comes back up, so a held
+   * Space can never leak spaces into the freshly-started set.
+   */
+  const suppressUntilKeyup = useRef<string | null>(null);
+  /** §7.2 — ms left before a set summary auto-advances (null = no countdown). */
+  const [countdownMs, setCountdownMs] = useState<number | null>(null);
+  /** §7.1 — return-to-results hint stashed by the Results screen's `D`. */
+  const [returnHint, setReturnHint] = useState<MicroDrillReturnHint | null>(null);
 
   const drill = useSessionStore((s) => s.drill);
   const phase = useSessionStore((s) => s.phase);
@@ -550,29 +619,51 @@ export default function WeaknessTrainingScreen() {
 
   const running = phase === "running" || phase === "set-summary";
 
+  /**
+   * §7.1 — consumes the return hint and restores the attempt the micro
+   * drill was launched from (shared by the Enter binding and the button).
+   */
+  const returnToResults = useCallback(() => {
+    if (returnHint === null) return;
+    clearMicroDrillReturn();
+    setReturnHint(null);
+    useUiStore.getState().navigate("lesson-results", {
+      "lesson-results": { attemptId: returnHint.attemptId },
+    });
+  }, [returnHint]);
+
   const reloadAnalysis = useCallback(async () => {
     try {
       const [a, cfg] = await Promise.all([analyzeWeaknesses(), getDrillConfig()]);
       setAnalysis(a);
       setConfig(cfg);
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Analysis failed");
+      setError({
+        kind: "analysis",
+        message: err instanceof Error ? err.message : "Analysis failed",
+      });
     }
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
       await reloadAnalysis();
+      if (cancelled) return;
       try {
         setDrillNumber((await attemptsRepo.countByKind("weakness")) + 1);
       } catch {
         // Header number stays 1 — cosmetic only.
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [reloadAnalysis]);
 
-  // ESC returns to the dashboard; refresh the drill counter when a drill
-  // completes (its sets are persisted as weakness attempts).
+  // Refresh the drill counter when a drill completes (its sets are persisted
+  // as weakness attempts) and re-run the analyzer for the queue sidebar.
   useEffect(() => {
     if (phase !== "finished") return;
     void attemptsRepo
@@ -581,9 +672,25 @@ export default function WeaknessTrainingScreen() {
       .catch(() => undefined);
     void reloadAnalysis();
   }, [phase, reloadAnalysis]);
+
+  // §3.7 abandon path: leaving an ACTIVE session via any navigation closes
+  // its training_sessions row and writes no attempt row. Mirrors the
+  // TypingSession screen — a hotkey/sidebar/palette jump out of a RUNNING
+  // drill must not leave the phase "running", the session timer ticking and
+  // an open training_sessions row behind.
+  useEffect(() => {
+    return () => {
+      void useSessionStore.getState().abandon();
+    };
+  }, []);
+
+  // ESC returns to the dashboard (§4.1.4 focus shield: an editable field
+  // keeps its keystroke, so an open Command Palette's Esc closes the
+  // palette instead of abandoning the drill).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (isEditableFocused()) return;
       void useSessionStore.getState().abandon();
       useUiStore.getState().navigate("dashboard");
     };
@@ -591,10 +698,164 @@ export default function WeaknessTrainingScreen() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Typing input — only while a drill set is actively running.
+  // §7.1 — (re)read the micro-drill return hint whenever a drill finishes.
+  // Absent or malformed JSON reads as null → the screen behaves exactly as
+  // it did before this feature existed. The hint only counts when it was
+  // stashed for THIS drill's plan (an abandoned micro-drill must never offer
+  // a return during some later, unrelated drill), and the storage copy is
+  // consumed the moment it is read — state keeps it alive for the Enter
+  // binding/button, so it can never outlive the drill it belongs to.
+  useEffect(() => {
+    if (phase !== "finished") {
+      setReturnHint(null);
+      return;
+    }
+    const hint = readMicroDrillReturn();
+    const planId = useSessionStore.getState().drill?.plan.sets[0]?.id ?? null;
+    setReturnHint(hint !== null && hint.planId === planId ? hint : null);
+    clearMicroDrillReturn();
+  }, [phase]);
+
+  // §7.1 — `[Enter] Return to Results`: bound ONLY while a drill is finished
+  // and the hint exists; consuming it clears the hint and restores the
+  // attempt the D press came from.
+  useEffect(() => {
+    if (phase !== "finished" || returnHint === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter") return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.repeat) return;
+      if (isEditableFocused()) return;
+      // §4.1.4 — a focused button/link keeps its own Enter (Tab -> "New
+      // drill" must activate the button, not jump back to Results).
+      const active = document.activeElement;
+      if (active instanceof HTMLButtonElement || active instanceof HTMLAnchorElement) return;
+      if (modalOpen()) return;
+      releaseChromeFocus();
+      event.preventDefault();
+      returnToResults();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [phase, returnHint, returnToResults]);
+
+  // §7.2 rapid-fire sets — Space/Enter jump straight to the next set (the
+  // "Next set" button keeps working); modified keys and editable fields
+  // never reach the drill.
+  useEffect(() => {
+    if (phase !== "set-summary") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== " " && event.key !== "Enter") return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      if (event.repeat) return;
+      if (isEditableFocused()) return;
+      // §4.1.4 — a focused button/link keeps its own Space/Enter (Tab ->
+      // "Regenerate" must activate the button, not start the next set).
+      const active = document.activeElement;
+      if (active instanceof HTMLButtonElement || active instanceof HTMLAnchorElement) return;
+      if (modalOpen()) return;
+      releaseChromeFocus();
+      event.preventDefault();
+      // The held key's auto-repeat must not leak into the set it just started.
+      suppressUntilKeyup.current = event.key;
+      useSessionStore.getState().resumeDrill();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [phase]);
+
+  // Companion to `suppressUntilKeyup`: the swallow only lasts until the key
+  // is physically released, so a missed keyup can never wedge input.
+  useEffect(() => {
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (suppressUntilKeyup.current === event.key) suppressUntilKeyup.current = null;
+    };
+    window.addEventListener("keyup", onKeyUp);
+    return () => window.removeEventListener("keyup", onKeyUp);
+  }, []);
+
+  // §4.1.2 — Ctrl/Cmd+R protection: mid-drill a reload would kill the webview
+  // (open training_sessions row, live engine). Claim the chord and restart the
+  // CURRENT set in place instead — never a page reload, never a dialog.
+  // The chord is claimed whenever a drill exists (including `finished`, where
+  // there is simply nothing to restart) so the webview can never reload with
+  // the drill's session state half-written.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isInstantReset(event)) return;
+      const store = useSessionStore.getState();
+      if (store.drill === null) return; // nothing to protect — the browser may reload
+      // Repeats are prevented too: a held chord must not slip a reload
+      // through on its second tick (only the first press acts).
+      event.preventDefault();
+      if (event.repeat) return;
+      if (isEditableFocused()) return;
+      if (modalOpen()) return;
+      if (store.phase !== "running" && store.phase !== "set-summary") return;
+      // The held chord's auto-repeat must not leak into the fresh buffer.
+      suppressUntilKeyup.current = event.key;
+      store.restartCurrentSet();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // §7.2 — 1.5 s auto-advance after a set summary (Space/Enter skips it).
+  // The interval is torn down on every phase change and unmount via the
+  // `alive` flag, and the tick re-checks the LIVE phase before resuming, so
+  // a stray callback can never start a set after the user left this screen.
+  // §4.1.4: an editable field (the Command Palette's input) owns focus while
+  // an overlay is open — the advance is held (frozen at 0.0s) until it
+  // closes, so no drill ever starts behind the palette. A modal that is NOT
+  // editable (the Shortcuts sheet, whose dialog box holds focus) holds it
+  // the same way — a timer must never fire `resumeDrill()` behind an overlay.
+  useEffect(() => {
+    if (phase !== "set-summary") {
+      setCountdownMs(null);
+      return;
+    }
+    let alive = true;
+    const startedAt = Date.now();
+    setCountdownMs(SET_ADVANCE_MS);
+    const timerId = setInterval(() => {
+      if (!alive) return;
+      const left = SET_ADVANCE_MS - (Date.now() - startedAt);
+      if (left > 0) {
+        setCountdownMs(left);
+        return;
+      }
+      // Held while an editable field owns focus OR a modal covers the drill;
+      // the interval keeps running so the advance resumes on the next tick
+      // after the overlay closes.
+      if (isEditableFocused() || modalOpen()) {
+        setCountdownMs(0);
+        return;
+      }
+      clearInterval(timerId);
+      if (useSessionStore.getState().phase === "set-summary") {
+        useSessionStore.getState().resumeDrill();
+      }
+      setCountdownMs(null);
+    }, COUNTDOWN_TICK_MS);
+    return () => {
+      alive = false;
+      clearInterval(timerId);
+    };
+  }, [phase]);
+
+  // Typing input — only while a drill set is actively running. §4.1.4: if an
+  // editable field owns focus (open Command Palette) the keystroke is theirs,
+  // and no keystroke reaches the drill while a modal covers it.
   useEffect(() => {
     if (phase !== "running") return;
     const onKeyDown = (event: KeyboardEvent) => {
+      // IME composition: the composing keydown reports the pending key, not
+      // a committed character — it must never reach the buffer.
+      if (event.isComposing || event.keyCode === 229) return;
+      // The key that advanced us out of a set summary is still held down.
+      if (event.repeat && suppressUntilKeyup.current === event.key) return;
+      if (modalOpen()) return;
+      if (isEditableFocused()) return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key === "Backspace") {
         event.preventDefault();
@@ -619,14 +880,17 @@ export default function WeaknessTrainingScreen() {
     // §20 adaptive-lessons toggle gates the Phase 6 generator injection.
     if (!useSettingsStore.getState().settings.adaptiveLessons) return;
     setBusy(true);
+    setError(null);
     try {
       const position = await getPosition().catch(() => null);
       const userLevel = position?.currentLesson?.level ?? 1;
       const plan = buildDrillPlan(analysis, config, newDrillSeed(), userLevel);
-      planRef.current = plan;
       await useSessionStore.getState().startDrill(plan);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start drill");
+      setError({
+        kind: "drill",
+        message: err instanceof Error ? err.message : "Failed to start drill",
+      });
     } finally {
       setBusy(false);
     }
@@ -636,12 +900,18 @@ export default function WeaknessTrainingScreen() {
     if (analysis === null || config === null) return;
     if (!useSettingsStore.getState().settings.adaptiveLessons) return;
     setBusy(true);
+    setError(null);
     try {
       const position = await getPosition().catch(() => null);
       const userLevel = position?.currentLesson?.level ?? 1;
       const plan = buildDrillPlan(analysis, config, newDrillSeed(), userLevel);
-      planRef.current = plan;
       await useSessionStore.getState().startDrill(plan); // new seed, set 0
+    } catch (err) {
+      setError({
+        kind: "drill",
+        message:
+          err instanceof Error ? err.message : "Failed to regenerate the drill",
+      });
     } finally {
       setBusy(false);
     }
@@ -657,11 +927,37 @@ export default function WeaknessTrainingScreen() {
     : null;
   const prevResult = drill && drill.setResults.length > 1 ? drill.setResults[drill.setResults.length - 2] : null;
 
+  /**
+   * §7.2 — the target-elimination line for the set summary: this set's
+   * focus-key accuracy against the previous set's, falling back to the
+   * analyzer's rolling-30d baseline on the first set. All inputs come from
+   * component state (store finish pipeline + analysis loaded on navigation)
+   * — no per-summary DB queries.
+   */
+  const elimination = useMemo(() => {
+    if (phase !== "set-summary" || lastResult === null || focusKeys.length === 0) return null;
+    if (lastResult.focus.total === 0) return null;
+    const next = (lastResult.focus.hits / lastResult.focus.total) * 100;
+    let prev: number | null = null;
+    if (prevResult !== null && prevResult.focus.total > 0) {
+      prev = (prevResult.focus.hits / prevResult.focus.total) * 100;
+    } else if (analysis !== null) {
+      const baselines = focusKeys
+        .map((key) => analysis.targets.find((target) => target.key === key)?.accuracy)
+        .filter((value): value is number => typeof value === "number");
+      if (baselines.length > 0) {
+        prev = baselines.reduce((sum, value) => sum + value, 0) / baselines.length;
+      }
+    }
+    return eliminationMessage(prev, next, focusKeys);
+  }, [phase, lastResult, prevResult, focusKeys, analysis]);
+
   return (
     <main className="flex w-full flex-1 gap-space-sm overflow-hidden bg-surface p-space-sm sm:p-space-base">
       <QueueSidebar
         analysis={analysis}
         config={config}
+        error={error !== null && error.kind === "analysis" ? error.message : null}
         drillNumber={drillNumber}
         onStart={() => void startDrill()}
         busy={busy}
@@ -670,8 +966,19 @@ export default function WeaknessTrainingScreen() {
 
       <section className="flex min-w-0 flex-1 flex-col gap-space-sm overflow-y-auto">
         {error !== null && (
-          <div className="rounded-lg border border-error/40 bg-error-container/40 px-space-base py-2 font-code-sm text-code-sm text-error">
-            {error}
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-error/40 bg-error-container/40 px-space-base py-2 font-code-sm text-code-sm text-error">
+            <span>{error.message}</span>
+            {/* Retry reloads the ANALYZER — a drill start/regenerate failure
+                has nothing to retry here, so it only shows the message. */}
+            {error.kind === "analysis" && (
+              <button
+                type="button"
+                onClick={() => void reloadAnalysis()}
+                className="shrink-0 rounded bg-surface-container px-2 py-0.5 font-bold text-on-surface hover:bg-surface-container-high"
+              >
+                Retry
+              </button>
+            )}
           </div>
         )}
 
@@ -785,15 +1092,28 @@ export default function WeaknessTrainingScreen() {
               <h3 className="font-headline-md text-headline-md text-on-surface">
                 Set {drill.setIndex} of {drill.plan.sets.length} complete
               </h3>
+              {/* §7.2 — Space/Enter (or the countdown) start the next set. */}
               <button
                 type="button"
                 onClick={() => useSessionStore.getState().resumeDrill()}
                 className="flex items-center gap-2 rounded-lg bg-primary-container px-space-lg py-2 font-label-md text-sm font-semibold text-on-primary-container shadow-lg shadow-primary-container/30 hover:bg-tertiary-container"
               >
                 <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                Next set ({drill.setIndex + 1} of {drill.plan.sets.length})
+                <span>Next set ({drill.setIndex + 1} of {drill.plan.sets.length})</span>
+                <kbd className="rounded border border-on-primary-container/40 bg-on-primary-container/20 px-1.5 py-0.5 text-[11px]">
+                  Space
+                </kbd>
               </button>
             </div>
+
+            {/* §7.2 — target elimination progress for the focus keys. */}
+            {elimination !== null && (
+              <p className="mt-2 flex items-center gap-1.5 font-code-sm text-code-sm font-semibold text-on-surface">
+                <span className="material-symbols-outlined text-[15px] text-primary">trending_up</span>
+                <span>{elimination}</span>
+              </p>
+            )}
+
             <div className="mt-2 grid grid-cols-2 gap-space-sm md:grid-cols-4">
               <StatCell label="WPM" value={Math.round(lastResult.wpm).toString()} tone="text-primary" />
               <StatCell label="Accuracy" value={fmt1(lastResult.accuracy)} suffix="%" />
@@ -805,6 +1125,26 @@ export default function WeaknessTrainingScreen() {
               />
               <StatCell label="Duration" value={fmtClock(lastResult.durationMs)} />
             </div>
+
+            {/* §7.2 — 1.5 s auto-advance countdown (Space/Enter skips). */}
+            <div className="mt-3 flex items-center gap-3">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-container-lowest">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-100 ease-linear"
+                  style={{
+                    width: `${
+                      countdownMs !== null
+                        ? Math.max(0, Math.min(100, (countdownMs / SET_ADVANCE_MS) * 100))
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+              <span className="shrink-0 font-code-sm text-code-sm text-on-surface-variant">
+                {countdownMs !== null ? `${(countdownMs / 1000).toFixed(1)}s` : ""} • Space or
+                Enter starts now
+              </span>
+            </div>
           </div>
         )}
 
@@ -812,14 +1152,30 @@ export default function WeaknessTrainingScreen() {
           <div className="rounded-xl border border-secondary/40 bg-surface-container-low p-space-lg shadow-xl">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-headline-md text-headline-md text-on-surface">Drill complete</h3>
-              <button
-                type="button"
-                onClick={() => void regenerate()}
-                className="flex items-center gap-2 rounded-lg bg-primary-container px-space-lg py-2 font-label-md text-sm font-semibold text-on-primary-container hover:bg-tertiary-container"
-              >
-                <span className="material-symbols-outlined text-[16px]">refresh</span>
-                New drill
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* §7.1 — only when this drill came from Results' `D`. */}
+                {returnHint !== null && (
+                  <button
+                    type="button"
+                    onClick={returnToResults}
+                    className="flex items-center gap-2 rounded-lg bg-primary-container px-space-lg py-2 font-label-md text-sm font-semibold text-on-primary-container shadow-lg shadow-primary-container/30 ring-1 ring-primary/40 hover:bg-tertiary-container"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">fact_check</span>
+                    <span>Return to Results</span>
+                    <kbd className="rounded border border-on-primary-container/40 bg-on-primary-container/20 px-1.5 py-0.5 text-[11px]">
+                      Enter
+                    </kbd>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void regenerate()}
+                  className="flex items-center gap-2 rounded-lg bg-primary-container px-space-lg py-2 font-label-md text-sm font-semibold text-on-primary-container hover:bg-tertiary-container"
+                >
+                  <span className="material-symbols-outlined text-[16px]">refresh</span>
+                  New drill
+                </button>
+              </div>
             </div>
             <p className="font-code-sm text-code-sm text-on-surface-variant">
               {drill.setResults.length} sets saved as weakness attempts • queue
@@ -851,8 +1207,9 @@ export default function WeaknessTrainingScreen() {
         <RecoveryCurves analysis={analysis} />
 
         <p className="px-1 pb-1 font-code-sm text-[10px] uppercase tracking-wider text-outline-variant">
-          ESC returns to the dashboard • analyzer runs on navigation, never per
-          keystroke • all intelligence is local
+          ESC returns to the dashboard • SPACE / ENTER jumps to the next set •
+          analyzer runs on navigation, never per keystroke • all intelligence
+          is local
         </p>
       </section>
     </main>

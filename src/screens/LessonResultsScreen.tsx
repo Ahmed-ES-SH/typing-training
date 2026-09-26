@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getLesson, nextLessonInOrder } from "../content";
 import { attemptsRepo, customLessonsRepo } from "../lib/db/repositories";
@@ -16,6 +16,10 @@ import type { CustomLesson } from "../lib/schemas";
 import { customIdFromRef, toCurriculumLesson } from "../lib/customLessons/domain";
 import { fmt1, fmtClock, moduleNumber } from "../lib/format";
 import { getStreak, getTodayActuals } from "../lib/stats/dailyService";
+import { buildMicroDrillPlan, stashMicroDrillReturn } from "../lib/intelligence/microDrill";
+import { newDrillSeed } from "../lib/intelligence/drillService";
+import { resultsActionFor } from "../lib/session/goldenLoop";
+import { isEditableFocused } from "../lib/session/focusShield";
 import { cn } from "../lib/cn";
 import { useCurriculumStore } from "../stores/useCurriculumStore";
 import { useDailyGoalsStore } from "../stores/useDailyGoalsStore";
@@ -28,7 +32,9 @@ import { useUiStore } from "../stores/useUiStore";
  * tokens; the mockup's raw slate/emerald hexes map to the nearest palette
  * colors). Shows the verdict + grade, threshold-delta metric cards, per-key
  * spotlight cards from the attempt's `key_report`, the attempt history strip
- * and the Esc / Ctrl+R / Enter shortcut actions.
+ * and the keyboard-first actions (UX plan §4.1.1 + §7.1): Enter =
+ * Continue/Retry, Space = Replay/Retry, D = 45s Targeted Micro-Drill on the
+ * missed keys, Ctrl+R = Retry, Esc = Curriculum.
  */
 
 /* Number/time rendering comes from the shared `lib/format` util (Phase 8 §3.5). */
@@ -216,7 +222,12 @@ export default function LessonResultsScreen() {
     : null;
 
   const verdict = useMemo(() => {
-    if (outcome) return outcome;
+    // §16: the store outcome carries the §8 curriculum verdict, and for a
+    // custom module `completeCustomAttempt` hardcodes PASS — so it must
+    // never reach the paint for custom lessons. Skipping it here makes the
+    // fresh-completion path take the personal-target branch below, exactly
+    // like the history path (outcome null) always did.
+    if (outcome && !isCustom) return outcome;
     if (data) {
       const input = { completed: true, accuracy: data.accuracy, wpm: data.wpm };
       if (isCustom) {
@@ -246,6 +257,28 @@ export default function LessonResultsScreen() {
     return null;
   }, [outcome, data, isCustom, customModule]);
 
+  /** §7.1 — double-press shield while the micro-drill plan is launching. */
+  const launchingRef = useRef(false);
+  const [drillLaunchError, setDrillLaunchError] = useState<string | null>(null);
+
+  /**
+   * §7.1 — the worst missed keys behind the Targeted Micro-Drill card:
+   * ≥ 2 incorrect presses, worst-first, ties broken by lower accuracy,
+   * capped at the plan's 3 displayed chars.
+   */
+  const drillCandidates = useMemo(() => {
+    const report = data?.keyReport ?? null;
+    if (report === null) return [];
+    const accuracyOf = (entry: { totalPresses: number; incorrectPresses: number }): number =>
+      entry.totalPresses > 0
+        ? (entry.totalPresses - entry.incorrectPresses) / entry.totalPresses
+        : 1;
+    return report
+      .filter((entry) => entry.incorrectPresses >= 2)
+      .sort((a, b) => b.incorrectPresses - a.incorrectPresses || accuracyOf(a) - accuracyOf(b))
+      .slice(0, 3);
+  }, [data]);
+
   // Actions: Esc -> lesson list, Ctrl+R -> Retry, Enter -> Continue (pass) /
   // Retry (otherwise) — matching the primary button.
   const navigateLessons = () =>
@@ -269,20 +302,69 @@ export default function LessonResultsScreen() {
     if (id) useCurriculumStore.getState().startLesson(id);
   };
 
+  /**
+   * §7.1 — `D` (or the card's button): build the ephemeral plan over the
+   * missed keys, stash the return-to-results hint, then hand the drill to
+   * the session store's normal `kind='weakness'` pipeline (attempt rows and
+   * key rollups happen there; curriculum unlock gates stay untouched) and
+   * jump to the Weakness screen.
+   */
+  const launchMicroDrill = async () => {
+    if (launchingRef.current || drillCandidates.length === 0) return;
+    launchingRef.current = true;
+    setDrillLaunchError(null);
+    try {
+      const plan = buildMicroDrillPlan(
+        drillCandidates.map((entry) => entry.key),
+        newDrillSeed(),
+        lesson?.level ?? 1,
+      );
+      await useSessionStore.getState().startDrill(plan);
+      stashMicroDrillReturn({
+        attemptId: params?.attemptId ?? null,
+        planId: plan.sets[0]?.id,
+      });
+      useUiStore.getState().navigate("weakness-training");
+    } catch (err) {
+      setDrillLaunchError(
+        err instanceof Error ? err.message : "Failed to start the micro-drill",
+      );
+      launchingRef.current = false;
+    }
+  };
+
+  // UX plan §4.1.1 "Smart Enter" + §7.1 Micro-Drill: the primary action key
+  // NEVER dead-ends — Enter advances on PASS and instantly retries on FAIL,
+  // Space always replays the current lesson (beating the personal best on a
+  // pass), Esc returns to the curriculum and D launches the targeted
+  // micro-drill. Registered on every render so the verdict/attempt data of
+  // the current paint is what the handler sees.
   useEffect(() => {
     const canGoNext = verdict?.verdict === "PASS" && verdict.nextLessonId !== null;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        navigateLessons();
-      } else if (event.ctrlKey && event.key.toLowerCase() === "r") {
-        event.preventDefault();
-        retryLesson();
-      } else if (event.key === "Enter" && data !== null) {
-        event.preventDefault();
-        if (canGoNext) nextLesson();
-        else retryLesson();
-      }
+      // §4.1.4 focus shield: an editable field keeps its keystrokes.
+      if (isEditableFocused()) return;
+      // A button/link the user deliberately focused (Tab or click) keeps its
+      // Space/Enter — bail out instead of blurring it, so "Retry save" /
+      // "Drill missed keys" activate rather than firing a screen action.
+      const active = document.activeElement;
+      if (active instanceof HTMLButtonElement || active instanceof HTMLAnchorElement) return;
+      // Defence in depth: a global hotkey that already claimed this key wins.
+      if (event.defaultPrevented === true) return;
+      // A launch in flight owns the flow — swallow keys until it navigates.
+      if (launchingRef.current) return;
+
+      const action = resultsActionFor(event, {
+        canAdvance: canGoNext,
+        hasAttempt: data !== null,
+        canDrill: drillCandidates.length > 0,
+      });
+      if (action === null) return;
+      event.preventDefault();
+      if (action === "curriculum") navigateLessons();
+      else if (action === "next-lesson") nextLesson();
+      else if (action === "drill-micro") void launchMicroDrill();
+      else retryLesson();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -318,6 +400,8 @@ export default function LessonResultsScreen() {
   }
 
   const passed = verdict?.verdict === "PASS";
+  /** §16 — a custom module with no personal targets has no verdict at all. */
+  const targetUnset = isCustom && verdict !== null && verdict.verdict === null;
   const grade = verdict?.grade ?? "F";
   const nextLessonInfo = verdict?.nextLessonId ? getLesson(verdict.nextLessonId) : null;
   /** The large primary action is Continue when a next lesson unlocked, else Retry. */
@@ -359,13 +443,25 @@ export default function LessonResultsScreen() {
             <span
               className={cn(
                 "flex items-center gap-1",
-                passed ? "text-secondary" : "text-error",
+                passed
+                  ? "text-secondary"
+                  : targetUnset
+                    ? "text-on-surface-variant"
+                    : "text-error",
               )}
             >
               <span className="material-symbols-outlined text-[14px]">
-                {passed ? "check_circle" : "cancel"}
+                {passed ? "check_circle" : targetUnset ? "radio_button_unchecked" : "cancel"}
               </span>
-              {passed ? (isCustom ? "Personal target met" : "Passed") : isCustom ? "Target not met" : "Not passed"}
+              {passed ? (
+                isCustom ? "Personal target met" : "Passed"
+              ) : targetUnset ? (
+                "No personal target"
+              ) : isCustom ? (
+                "Target not met"
+              ) : (
+                "Not passed"
+              )}
             </span>
           </div>
         </div>
@@ -398,18 +494,28 @@ export default function LessonResultsScreen() {
                         ? "Passed!"
                         : "Keep practicing"}
                   </h1>
-                  <span
-                    className={cn(
-                      "rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                      GRADE_TONES[grade],
-                    )}
-                  >
-                    Grade {grade}
-                  </span>
+                  {/* §16 — "Grade F" is a §8-gate artifact: with no personal
+                      targets there is no verdict to grade, so the pill would
+                      contradict the "No personal target" chip beside it. */}
+                  {!targetUnset && (
+                    <span
+                      className={cn(
+                        "rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                        GRADE_TONES[grade],
+                      )}
+                    >
+                      Grade {grade}
+                    </span>
+                  )}
                 </div>
                 <p className="mt-1 flex items-center gap-2 font-body-sm text-body-sm text-on-surface-variant">
-                  <span className="material-symbols-outlined text-[16px] text-secondary">
-                    {passed ? "lock_open" : "lock"}
+                  <span
+                    className={cn(
+                      "material-symbols-outlined text-[16px]",
+                      targetUnset ? "text-on-surface-variant" : "text-secondary",
+                    )}
+                  >
+                    {passed ? "lock_open" : targetUnset ? "radio_button_unchecked" : "lock"}
                   </span>
                   <span>
                         {isCustom ? (
@@ -506,7 +612,9 @@ export default function LessonResultsScreen() {
             <div
               className={cn(
                 "group rounded-xl border bg-surface-container-low/60 p-4 transition-colors",
-                passed
+                // §16 — with no accuracy target the card is neutral, exactly
+                // like the Speed card: only a real miss earns the error tint.
+                accDelta === null || passed
                   ? "border-white/5 hover:border-secondary/40"
                   : "border-error/20",
               )}
@@ -518,7 +626,11 @@ export default function LessonResultsScreen() {
                 <span
                   className={cn(
                     "font-code-lg text-3xl font-bold tracking-tight",
-                    passed ? "text-secondary" : "text-error",
+                    accDelta === null
+                      ? "text-on-surface"
+                      : passed
+                        ? "text-secondary"
+                        : "text-error",
                   )}
                 >
                   {fmt1(data.accuracy)}
@@ -634,6 +746,71 @@ export default function LessonResultsScreen() {
             </div>
           )}
 
+          {/* §7.1 Targeted Micro-Drill — 1-click 45s drill on the worst keys */}
+          {drillCandidates.length > 0 && (
+            <div className="border-b border-white/5 pb-8 pt-2">
+              <span className="mb-3 block text-xs font-medium text-on-surface-variant">
+                Targeted Micro-Drill
+              </span>
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-primary/40 bg-primary-container/10 p-4 ring-1 ring-primary/20">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 font-label-md text-label-md font-bold text-on-surface">
+                    <span className="material-symbols-outlined text-[18px] text-primary">
+                      bolt
+                    </span>
+                    <span>Fix your worst keys in 45 seconds</span>
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {drillCandidates.map((entry) => {
+                      const errPct =
+                        entry.totalPresses > 0
+                          ? Math.round((entry.incorrectPresses / entry.totalPresses) * 100)
+                          : 0;
+                      return (
+                        <span
+                          key={`${entry.key}-${entry.shiftRequired ? "s" : "b"}`}
+                          title={`${entry.incorrectPresses} misses of ${entry.totalPresses} presses`}
+                          className="inline-flex items-center gap-2 rounded-lg border border-error/30 bg-error-container/30 px-2.5 py-1 font-code-sm text-code-sm text-on-surface"
+                        >
+                          <span className="flex h-6 min-w-6 items-center justify-center rounded bg-surface-container-lowest px-1.5 font-mono text-[12px] font-bold text-error">
+                            {entry.key === " "
+                              ? "␣"
+                              : entry.key === "\n"
+                                ? "⏎"
+                                : entry.key}
+                          </span>
+                          <span className="font-semibold text-error">{errPct}% err</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 flex items-center gap-1.5 font-code-sm text-code-sm text-on-surface-variant">
+                    <span>Press</span>
+                    <kbd className="rounded border border-white/15 bg-surface-container-low px-1.5 py-0.5 text-[11px] font-bold text-on-surface">
+                      D
+                    </kbd>
+                    <span>to Drill (45s)</span>
+                  </p>
+                </div>
+                {/* Same action as the `D` binding — one gesture, two paths. */}
+                <button
+                  type="button"
+                  onClick={() => void launchMicroDrill()}
+                  className="flex items-center gap-2 rounded-xl bg-primary-container px-5 py-2.5 text-sm font-semibold text-on-primary-container shadow-lg shadow-primary-container/40 ring-1 ring-primary/40 transition-all hover:bg-tertiary-container"
+                >
+                  <span className="material-symbols-outlined text-[18px]">gps_fixed</span>
+                  <span>Drill missed keys</span>
+                  <kbd className="rounded border border-on-primary-container/40 bg-on-primary-container/20 px-1.5 py-0.5 text-[11px]">
+                    D
+                  </kbd>
+                </button>
+              </div>
+              {drillLaunchError !== null && (
+                <p className="mt-2 font-code-sm text-code-sm text-error">{drillLaunchError}</p>
+              )}
+            </div>
+          )}
+
           {/* Attempt history strip (comparison with previous attempts) */}
           {history.length > 1 && (
             <div className="border-b border-white/5 py-6">
@@ -642,11 +819,23 @@ export default function LessonResultsScreen() {
               </span>
               <div className="flex flex-wrap gap-space-sm">
                 {[...history].reverse().map((attempt) => {
-                  const attemptPassed = evaluateAttempt({
+                  const attemptInput = {
                     completed: attempt.completed,
                     accuracy: attempt.accuracy,
                     wpm: attempt.wpm,
-                  });
+                  };
+                  // §16 — custom lessons grade against their OPTIONAL personal
+                  // targets (null = no target, exactly like the verdict memo
+                  // above), never the §8 curriculum gate: an unpreset module
+                  // must not paint "Not passed" beside the "No personal
+                  // target" chip.
+                  const attemptVerdict = isCustom
+                    ? evaluatePersonal(
+                        attemptInput,
+                        customModule?.wpmTarget ?? null,
+                        customModule?.accuracyTarget ?? null,
+                      )
+                    : evaluateAttempt(attemptInput);
                   return (
                     <div
                       key={attempt.id}
@@ -663,10 +852,18 @@ export default function LessonResultsScreen() {
                       <span
                         className={cn(
                           "font-semibold",
-                          attemptPassed === "PASS" ? "text-secondary" : "text-error",
+                          attemptVerdict === "PASS"
+                            ? "text-secondary"
+                            : attemptVerdict === "FAIL"
+                              ? "text-error"
+                              : "text-on-surface-variant",
                         )}
                       >
-                        {attemptPassed === "PASS" ? "Passed" : "Not passed"}
+                        {attemptVerdict === "PASS"
+                          ? "Passed"
+                          : attemptVerdict === "FAIL"
+                            ? "Not passed"
+                            : "No target"}
                       </span>
                     </div>
                   );
@@ -702,12 +899,25 @@ export default function LessonResultsScreen() {
                   </kbd>
                 </button>
               )}
+              {/* UX plan §4.1.1 — Space is the always-live secondary action:
+                  replay for a personal best on PASS, instant retry on FAIL. */}
+              <button
+                type="button"
+                onClick={retryLesson}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-surface-container px-4 py-2.5 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface sm:w-auto"
+              >
+                <span className="material-symbols-outlined text-[16px]">replay</span>
+                <span>{canContinue ? "Replay" : "Retry"}</span>
+                <kbd className="rounded border border-white/10 bg-surface-container-low px-1.5 py-0.5 text-[11px] text-on-surface-variant">
+                  Space
+                </kbd>
+              </button>
             </div>
 
             <button
               type="button"
               onClick={canContinue ? nextLesson : retryLesson}
-              className="flex w-full items-center justify-center gap-3 rounded-xl bg-primary-container px-7 py-3 text-sm font-semibold text-on-primary-container shadow-lg shadow-primary-container/25 transition-all hover:bg-tertiary-container sm:w-auto"
+              className="flex w-full items-center justify-center gap-3 rounded-xl bg-primary-container px-7 py-3 text-sm font-semibold text-on-primary-container shadow-lg shadow-primary-container/45 ring-1 ring-primary/40 transition-all hover:bg-tertiary-container sm:w-auto"
             >
               <span>{canContinue ? "Continue" : "Retry"}</span>
               <kbd className="rounded border border-on-primary-container/40 bg-on-primary-container/20 px-2 py-0.5 text-[11px] text-on-primary-container">

@@ -36,18 +36,57 @@ const STATUS_LABEL: Record<DayStatus, string> = {
   inactive: "rest day",
 };
 
-function cellTip(cell: DayConsistency, isToday: boolean): string {
+function weekdayOf(date: string): string {
+  return "SMTWTFS"[new Date(`${date}T12:00:00`).getDay()] ?? "";
+}
+
+/**
+ * §5.2 hover tooltip — replaces the native `title` with an on-palette card
+ * carrying the same read-out (day + status + streak, minutes, lessons, chars,
+ * goals). Purely presentational: `aria-hidden` and `pointer-events-none`, so
+ * the chart's own `role="img"` label stays the single accessibility story.
+ * The edge cells anchor to their own side instead of overflowing the card.
+ */
+function CellTooltip({
+  cell,
+  isToday,
+  align,
+}: {
+  cell: DayConsistency;
+  isToday: boolean;
+  align: "left" | "center" | "right";
+}) {
   const head = isToday ? "Today" : cell.date;
   const streak = cell.streakDay !== null ? ` • streak day ${cell.streakDay}` : "";
   return (
-    `${head}: ${STATUS_LABEL[cell.status]}${streak}\n` +
-    `${fmtMinutes(cell.minutes)} trained • ${cell.lessons} lesson(s) • ` +
-    `${fmtInt(cell.chars)} chars • ${cell.metGoals}/${cell.enabledGoals} goals`
+    <div
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute bottom-full z-20 mb-1 w-max max-w-[210px] rounded-lg border border-surface-container-highest/60 bg-surface-container-low px-2 py-1.5 text-left font-code-sm text-[10px] leading-tight opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100",
+        align === "left"
+          ? "left-0"
+          : align === "right"
+            ? "right-0"
+            : "left-1/2 -translate-x-1/2",
+      )}
+    >
+      <span className="block font-bold text-on-surface">
+        {head}: {STATUS_LABEL[cell.status]}
+        {streak}
+      </span>
+      <span className="mt-0.5 block text-outline">
+        {fmtMinutes(cell.minutes)} trained • {cell.lessons} lesson(s) •{" "}
+        {fmtInt(cell.chars)} chars • {cell.metGoals}/{cell.enabledGoals} goals
+      </span>
+    </div>
   );
 }
 
-function weekdayOf(date: string): string {
-  return "SMTWTFS"[new Date(`${date}T12:00:00`).getDay()] ?? "";
+/** Edge cells hug their side; the rest centre over their own column. */
+function alignOf(index: number, total: number): "left" | "center" | "right" {
+  if (index === 0) return "left";
+  if (index === total - 1) return "right";
+  return "center";
 }
 
 export function ConsistencyStrip({
@@ -94,14 +133,19 @@ export function ConsistencyStrip({
             return (
               <div
                 key={cell.date}
-                title={cellTip(cell, isToday)}
                 className={cn(
-                  "min-w-0 flex-1 rounded-sm",
+                  "group relative min-w-0 flex-1 rounded-sm",
                   CELL_TONE[cell.status],
                   isToday && "animate-pulse ring-1 ring-primary",
                 )}
                 style={{ height: `${Math.max(8, (cell.minutes / maxMinutes) * 100)}%` }}
-              />
+              >
+                <CellTooltip
+                  cell={cell}
+                  isToday={isToday}
+                  align={alignOf(index, days.length)}
+                />
+              </div>
             );
           })}
         </div>
@@ -127,9 +171,8 @@ export function ConsistencyStrip({
           return (
             <div
               key={cell.date}
-              title={cellTip(cell, isToday)}
               className={cn(
-                "flex h-9 flex-col items-center justify-center rounded",
+                "group relative flex h-9 flex-col items-center justify-center rounded",
                 CELL_TONE[cell.status],
                 isToday && "animate-pulse ring-1 ring-primary",
               )}
@@ -142,6 +185,11 @@ export function ConsistencyStrip({
               >
                 {cell.status === "met" ? "✓" : weekdayOf(cell.date)}
               </span>
+              <CellTooltip
+                cell={cell}
+                isToday={isToday}
+                align={alignOf(index, days.length)}
+              />
             </div>
           );
         })}

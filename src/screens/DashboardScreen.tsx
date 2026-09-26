@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getLevelMeta, getLesson } from "../content";
 import { MasteryGauge, tierLabel } from "../components/MasteryGauge";
@@ -7,9 +7,11 @@ import { StatCard } from "../components/StatCard";
 import { StatusPill } from "../components/StatusPill";
 import { AttemptResultPill } from "../components/AttemptResultPill";
 import { ConsistencyStrip } from "../components/ConsistencyStrip";
+import { GoalRing } from "../components/GoalRing";
 import { ACCURACY_GATE } from "../lib/curriculum/rules";
 import { attemptsRepo, progressRepo, statsRepo } from "../lib/db/repositories";
 import { cn } from "../lib/cn";
+import { isEditableFocused } from "../lib/session/focusShield";
 import {
   fmt1,
   fmtDelta,
@@ -22,16 +24,35 @@ import {
 import {
   getConsistency,
   getStreak,
+  localDayKey,
   todayProgress,
   type DayConsistency,
   type StreakInfo,
   type TodayProgress,
 } from "../lib/stats/dailyService";
+import {
+  dashboardEnterAction,
+  deriveRoutine,
+  pickSprintLesson,
+  readRoutineForDay,
+  streakEncouragement,
+  writeRoutine,
+  type DashboardEnterAction,
+  type DeriveRoutineInput,
+  type MasteredLesson,
+  type RoutineAttempt,
+  type RoutineEntry,
+  type RoutineStep,
+  type RoutineStepId,
+  type RoutineStatus,
+} from "../lib/stats/dailyRoutine";
 import { getOverallProgress, getPosition, type CurriculumPosition, type OverallProgress } from "../lib/stats/progressService";
-import { analyzeWeaknesses, targetsToWeakKeys } from "../lib/intelligence/analyzer";
+import { analyzeWeaknesses, focusKeysOf, targetsToWeakKeys } from "../lib/intelligence/analyzer";
+import { DEFAULT_DRILL_CONFIG, buildDrillPlan, newDrillSeed } from "../lib/intelligence/drillService";
 import type { WeakKey } from "../lib/stats/weaknessService";
-import type { AttemptRow } from "../lib/schemas";
+import type { AttemptRow, Lesson, LessonProgress } from "../lib/schemas";
 import { useCurriculumStore } from "../stores/useCurriculumStore";
+import { useSessionStore } from "../stores/useSessionStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { useStatsStore } from "../stores/useStatsStore";
 import { useUiStore } from "../stores/useUiStore";
@@ -61,6 +82,10 @@ interface DashboardData {
   sparkDelta: number;
   dbSizeBytes: number | null;
   currentLessonLast: LastAttemptHint | null;
+  /** Today's routine clock (localStorage), or null when not started. */
+  routineEntry: RoutineEntry | null;
+  /** Finished attempts (all kinds) at or after the routine start. */
+  routineAttempts: RoutineAttempt[];
 }
 
 /** Radar bar color per the design's accuracy thresholds. */
@@ -97,25 +122,167 @@ function DemoSeedButton() {
   );
 }
 
+/* --------------------------- §5.1 daily routine -------------------------- */
+
+/**
+ * §4.1.4 — true while a modal overlay (Shortcuts sheet, Command Palette)
+ * covers the dashboard. `isEditableFocused()` alone misses a dialog whose
+ * box holds focus without being editable, so Enter could start a routine
+ * behind the overlay (same guard WeaknessTrainingScreen applies to drill
+ * hotkeys).
+ */
+function modalOpen(): boolean {
+  return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+}
+
+/** Completed lessons as the sprint picker consumes them (best WPM first). */
+function masteredLessonsOf(
+  progressMap: Record<string, LessonProgress>,
+): MasteredLesson[] {
+  return Object.values(progressMap)
+    .filter((row) => row.status === "completed")
+    .map((row) => ({ id: row.lessonId, bestWpm: row.bestWpm }));
+}
+
+/** Everything the routine card renders from and Enter dispatches through. */
+interface RoutineContext {
+  input: DeriveRoutineInput;
+  status: RoutineStatus;
+  mastered: MasteredLesson[];
+  currentLesson: Lesson | null;
+}
+
+function routineContextOf(
+  data: DashboardData,
+  progressMap: Record<string, LessonProgress>,
+  adaptiveEnabled: boolean,
+): RoutineContext {
+  const mastered = masteredLessonsOf(progressMap);
+  const currentLesson = data.position.currentLesson;
+  const input: DeriveRoutineInput = {
+    startedAt: data.routineEntry?.startedAt ?? null,
+    dayKey: data.routineEntry?.dayKey ?? localDayKey(Date.now()),
+    attemptsSinceStart: data.routineAttempts,
+    adaptiveEnabled,
+    analysisAvailable: data.weakKeys.length > 0,
+    completedLessonCount: mastered.length,
+    sprintLessonId: pickSprintLesson(mastered)?.id ?? null,
+    masteredLessonIds: mastered.map((lesson) => lesson.id),
+  };
+  return {
+    input,
+    status: deriveRoutine(input),
+    mastered,
+    currentLesson,
+  };
+}
+
+/**
+ * §5.1 — launches one routine step (the card/Enter dispatches; steps never
+ * chain into each other):
+ * - `warmup`: the analyzer's live queue through the normal `kind='weakness'`
+ *   pipeline — one 60 s set (~150 keys) — gated on the Settings toggle the
+ *   same way the Weakness screen's own start button is;
+ * - `frontier`: the current curriculum lesson;
+ * - `sprint`: `pickSprintLesson` (fastest mastered module).
+ * Returns false when the step cannot launch, so the caller falls through to
+ * the next pending step instead of dead-clicking.
+ */
+async function launchRoutineStep(
+  stepId: RoutineStepId,
+  ctx: RoutineContext,
+): Promise<boolean> {
+  if (stepId === "warmup") {
+    if (!ctx.input.adaptiveEnabled) return false;
+    const analysis = await analyzeWeaknesses();
+    if (analysis.empty || focusKeysOf(analysis, 3).length === 0) return false;
+    const plan = buildDrillPlan(
+      analysis,
+      { ...DEFAULT_DRILL_CONFIG, sets: 1, setLength: 150 },
+      newDrillSeed(),
+      ctx.currentLesson?.level ?? 1,
+    );
+    await useSessionStore.getState().startDrill(plan);
+    useUiStore.getState().navigate("weakness-training");
+    return true;
+  }
+  if (stepId === "frontier") {
+    if (ctx.currentLesson === null) return false;
+    useCurriculumStore.getState().startLesson(ctx.currentLesson.id);
+    return true;
+  }
+  const sprint = pickSprintLesson(ctx.mastered);
+  if (sprint === null) return false;
+  useCurriculumStore.getState().startLesson(sprint.id);
+  return true;
+}
+
+/**
+ * The routine's single entry point (card button AND Enter). Starting writes
+ * the clock FIRST — attempts only count from now — then runs the first
+ * launchable pending step; a step that cannot launch is skipped over inside
+ * the same click, exactly like a skipped step in `deriveRoutine`. Returns
+ * whether something actually launched so the caller can show a reason.
+ */
+async function runRoutineAction(
+  action: DashboardEnterAction,
+  ctx: RoutineContext,
+  onRoutineStarted: (entry: RoutineEntry) => void,
+): Promise<boolean> {
+  if (action === "none") return false;
+  if (action === "resume-frontier") {
+    if (ctx.currentLesson === null) return false;
+    useCurriculumStore.getState().startLesson(ctx.currentLesson.id);
+    return true;
+  }
+  let status = ctx.status;
+  if (action === "start-routine") {
+    const startedAt = Date.now();
+    const entry: RoutineEntry = { dayKey: localDayKey(startedAt), startedAt };
+    writeRoutine(entry);
+    onRoutineStarted(entry);
+    status = deriveRoutine({
+      ...ctx.input,
+      startedAt: entry.startedAt,
+      dayKey: entry.dayKey,
+    });
+  }
+  for (const step of status.steps) {
+    if (step.state !== "pending") continue;
+    if (await launchRoutineStep(step.id, ctx)) return true;
+  }
+  return false;
+}
+
 export default function DashboardScreen() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [routineBusy, setRoutineBusy] = useState(false);
+  const [routineError, setRoutineError] = useState<string | null>(null);
   const dbErrorMessage = useCurriculumStore((s) => s.dbError);
   const lastBackupAt = useSettingsStore((s) => s.settings.lastBackupAt);
+  const adaptiveEnabled = useSettingsStore((s) => s.settings.adaptiveLessons);
   const progressMap = useCurriculumStore((s) => s.progress);
   // First paint must not race bootstrapping: on a FRESH database the
   // dashboard mounted before the 260 progress rows existed and read an empty
   // position — showing "Curriculum Complete" on day one. Load (and reload)
   // once the curriculum store reports bootstrapping done.
   const curriculumLoaded = useCurriculumStore((s) => s.loaded);
+  const version = useStatsStore((s) => s.version);
   const now = Date.now();
+  // Synchronous in-flight guard: `useState` flips too late for a second
+  // Enter inside the same tick (or before React flushes).
+  const launchingRef = useRef(false);
 
   useEffect(() => {
     if (!curriculumLoaded) return;
     let cancelled = false;
     (async () => {
       try {
-        const [progress, position, streak, today, strip, weakKeys, recent, daily7, dbSizeBytes] =
+        // §5.1: the routine clock lives in localStorage, its progress in the
+        // attempt ledger — both read before the card first paints.
+        const routineEntry = readRoutineForDay(localDayKey(now));
+        const [progress, position, streak, today, strip, weakKeys, recent, daily7, dbSizeBytes, routineAttempts] =
           await Promise.all([
             getOverallProgress(),
             getPosition(),
@@ -133,6 +300,9 @@ export default function DashboardScreen() {
             attemptsRepo.recent(5),
             statsRepo.dailySeries(now - 7 * 86_400_000),
             statsRepo.dbSizeBytes(),
+            routineEntry === null
+              ? Promise.resolve<RoutineAttempt[]>([])
+              : attemptsRepo.finishedSince(routineEntry.startedAt),
           ]);
 
         // Last-attempt hint for the resume card.
@@ -167,6 +337,8 @@ export default function DashboardScreen() {
                   attemptCount: currentProgress?.attemptCount ?? 0,
                 }
               : null,
+            routineEntry,
+            routineAttempts,
           });
         }
       } catch (error) {
@@ -180,22 +352,78 @@ export default function DashboardScreen() {
     return () => {
       cancelled = true;
     };
+    // `version` joins the deps so a ledger write (finished attempt) re-reads
+    // the routine's steps live — the card flips a step to done in place.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curriculumLoaded]);
+  }, [curriculumLoaded, version]);
 
-  // Enter resumes the current lesson from the dashboard (plan §3.4).
+  /**
+   * Runs one routine action with busy/error state around it. Only reads the
+   * `ctx` it is handed, so the Enter listener may keep a slightly stale
+   * closure — everything it touches (stores, setState, refs) is stable.
+   */
+  const runAction = async (
+    action: DashboardEnterAction,
+    ctx: RoutineContext,
+  ): Promise<void> => {
+    if (launchingRef.current) return;
+    launchingRef.current = true;
+    setRoutineBusy(true);
+    setRoutineError(null);
+    try {
+      const launched = await runRoutineAction(action, ctx, (entry) =>
+        setData((prev) => (prev === null ? prev : { ...prev, routineEntry: entry })),
+      );
+      if (!launched) {
+        setRoutineError("No routine step can start right now — try again after your first lesson.");
+      }
+    } catch (error) {
+      setRoutineError(
+        error instanceof Error ? error.message : "Could not start the routine",
+      );
+    } finally {
+      launchingRef.current = false;
+      setRoutineBusy(false);
+    }
+  };
+
+  // Enter runs the Daily Routine while it owns the key (plan §5.1/§5.4):
+  // unstarted → START (clock + first launchable step), started → CONTINUE at
+  // the first pending step, complete → fall back to resuming the frontier.
+  // §4.1.4 focus shield: an editable field (e.g. the Command Palette's
+  // query input) keeps its keystrokes, an open dialog owns the keyboard
+  // outright, and a button/link the user deliberately focused (Tab or click)
+  // keeps its Enter so it activates instead of starting a routine from
+  // under it (same guards as FrontierHud).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Enter") return;
+      if (event.repeat) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (isEditableFocused()) return;
+      if (modalOpen()) return;
       if (useUiStore.getState().activeScreen !== "dashboard") return;
-      const current = data?.position.currentLesson;
-      if (current) {
-        event.preventDefault();
-        useCurriculumStore.getState().startLesson(current.id);
-      }
+      const active = document.activeElement;
+      if (active instanceof HTMLSelectElement) return;
+      if (active instanceof HTMLButtonElement || active instanceof HTMLAnchorElement) return;
+      if (data === null) return;
+      if (launchingRef.current) return;
+      const ctx = routineContextOf(
+        data,
+        useCurriculumStore.getState().progress,
+        useSettingsStore.getState().settings.adaptiveLessons,
+      );
+      const action = dashboardEnterAction(
+        ctx.status,
+        ctx.currentLesson !== null,
+      );
+      if (action === "none") return;
+      event.preventDefault();
+      void runAction(action, ctx);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   const levelMeta = useMemo(
@@ -240,6 +468,17 @@ export default function DashboardScreen() {
   const masteredRemaining = progress.totalLessons - progress.completedLessons;
   const wpmTrendPct =
     progress.lifetimeWpm > 0 ? (progress.wpmTrend / progress.lifetimeWpm) * 100 : 0;
+
+  // §5.1 — the routine card + Enter dispatch both read this one derivation.
+  const routineCtx = routineContextOf(data, progressMap, adaptiveEnabled);
+  const enterAction = dashboardEnterAction(
+    routineCtx.status,
+    routineCtx.currentLesson !== null,
+  );
+  const activeStep: RoutineStep | null =
+    routineCtx.status.steps.find((step) => step.id === routineCtx.status.activeStepId) ??
+    null;
+  const encouragement = streakEncouragement(streak.current);
 
   return (
     <main className="flex w-full flex-1 flex-col gap-space-md overflow-y-auto bg-surface p-space-base md:p-space-lg">
@@ -335,6 +574,123 @@ export default function DashboardScreen() {
       {/* --------------------- Main grid (2/3 + 1/3) --------------------- */}
       <div className="grid grid-cols-1 gap-space-md xl:grid-cols-3">
         <div className="flex flex-col gap-space-md xl:col-span-2">
+          {/* Daily Routine (§5.1) — the dashboard's primary action until the
+              three steps clear; a complete day renders its celebration. */}
+          <section
+            aria-label="Daily routine"
+            className={cn(
+              "rounded-xl border p-space-lg shadow-xl",
+              routineCtx.status.complete
+                ? "border-surface-container-highest/40 bg-surface-container-low"
+                : "border-primary/30 bg-gradient-to-br from-surface-container-low to-surface-container-lowest",
+            )}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
+                <span className="material-symbols-outlined text-[18px] text-primary-container">
+                  checklist
+                </span>
+                Daily Routine
+              </h3>
+              <span className="flex items-center gap-2">
+                {routineCtx.status.complete ? (
+                  <StatusPill tone="mastered">Complete ✓</StatusPill>
+                ) : (
+                  routineCtx.status.startedAt !== null && (
+                    <StatusPill tone="inProgress">In progress</StatusPill>
+                  )
+                )}
+                <span className="font-code-sm text-code-sm font-bold text-outline">
+                  {fmtDayStamp(now)}
+                </span>
+              </span>
+            </div>
+            <p className="mt-0.5 font-code-sm text-code-sm text-on-surface-variant">
+              Warm your weak keys, push two modules, then sprint — about 15
+              focused minutes.
+            </p>
+
+            <ol className="mt-3 flex flex-col gap-1.5">
+              {routineCtx.status.steps.map((step, index) => {
+                const active =
+                  step.state === "pending" &&
+                  step.id === routineCtx.status.activeStepId;
+                return (
+                  <li
+                    key={step.id}
+                    className={cn(
+                      "flex items-start gap-2 rounded-lg border px-space-sm py-1.5 transition-colors",
+                      active
+                        ? "border-primary/40 bg-primary-container/15"
+                        : "border-surface-container-highest/40 bg-surface-container-lowest/50",
+                      step.state === "skipped" && "opacity-60",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-code-sm text-[11px] font-bold",
+                        step.state === "done"
+                          ? "bg-primary text-on-primary"
+                          : active
+                            ? "border border-primary text-primary"
+                            : "border border-surface-container-highest text-outline",
+                      )}
+                    >
+                      {step.state === "done"
+                        ? "✓"
+                        : step.state === "skipped"
+                          ? "—"
+                          : index + 1}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5 font-label-md text-sm font-semibold text-on-surface">
+                        {step.title}
+                        {active && (
+                          <span className="font-code-sm text-[9px] uppercase tracking-wider text-primary">
+                            next
+                          </span>
+                        )}
+                      </span>
+                      <span className="block font-code-sm text-code-sm text-on-surface-variant">
+                        {step.state === "skipped" ? step.skipReason : step.detail}
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+
+            {enterAction === "start-routine" || enterAction === "continue-routine" ? (
+              <button
+                type="button"
+                disabled={routineBusy}
+                onClick={() => void runAction(enterAction, routineCtx)}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-primary-container px-space-lg py-2.5 font-label-md text-sm font-semibold text-on-primary-container shadow-lg shadow-primary-container/30 transition-all hover:bg-tertiary-container disabled:cursor-wait disabled:opacity-60"
+              >
+                <span className="rounded border border-on-primary-container/40 px-1.5 py-0.5 font-code-sm text-[10px]">
+                  Enter
+                </span>
+                <span>
+                  {enterAction === "start-routine"
+                    ? "Start Daily Routine"
+                    : `Continue — ${activeStep?.title ?? "next step"}`}
+                </span>
+              </button>
+            ) : (
+              <div className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary-container/20 px-space-lg py-2.5 font-label-md text-sm font-semibold text-primary">
+                <span className="material-symbols-outlined text-[16px]">
+                  task_alt
+                </span>
+                <span>Daily Routine Complete</span>
+              </div>
+            )}
+            {routineError !== null && (
+              <p className="mt-2 font-code-sm text-code-sm text-error">
+                {routineError}
+              </p>
+            )}
+          </section>
+
           {/* Active module card */}
           <section className="flex flex-col rounded-xl border border-surface-container-highest/40 bg-surface-container-low shadow-sm">
             {currentLesson ? (
@@ -405,7 +761,8 @@ export default function DashboardScreen() {
                   >
                     <span className="material-symbols-outlined text-[18px]">play_arrow</span>
                     <span>
-                      Resume Lesson {moduleNumber(currentLesson.level, currentLesson.orderIndex)} (Enter)
+                      Resume Lesson {moduleNumber(currentLesson.level, currentLesson.orderIndex)}
+                      {enterAction === "resume-frontier" ? " (Enter)" : ""}
                     </span>
                   </button>
                 </div>
@@ -527,49 +884,57 @@ export default function DashboardScreen() {
               </p>
             ) : (
               <>
-                {!today.minutes.disabled && (
-                  <GoalBar
-                    icon="schedule"
+                {/* §5.3/§5.4 — animated rings: sweep on mount, celebratory
+                    ring + check pop once a goal turns green. Disabled goals
+                    render their muted "off" ring instead of vanishing. */}
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  <GoalRing
                     label="Training Time"
-                    valueText={`${fmtMinutes(today.minutes.actual)} / ${today.goals.minutesGoal}m`}
+                    value={fmtMinutes(today.minutes.actual)}
+                    target={`of ${today.goals.minutesGoal}m`}
                     pct={today.minutes.pct}
                     met={today.minutes.met}
+                    disabled={today.minutes.disabled}
                   />
-                )}
-                {!today.lessons.disabled && (
-                  <GoalBar
-                    icon="checklist"
+                  <GoalRing
                     label="Lessons Done"
-                    valueText={`${today.lessons.actual} / ${today.goals.lessonsGoal}`}
+                    value={`${today.lessons.actual}`}
+                    target={`of ${today.goals.lessonsGoal}`}
                     pct={today.lessons.pct}
                     met={today.lessons.met}
+                    disabled={today.lessons.disabled}
                   />
-                )}
-                {!today.chars.disabled && (
-                  <GoalBar
-                    icon="keyboard_command_key"
+                  <GoalRing
                     label="Characters"
-                    valueText={`${fmtInt(today.chars.actual)} / ${fmtInt(today.goals.charsGoal)}`}
+                    value={fmtInt(today.chars.actual)}
+                    target={`of ${fmtInt(today.goals.charsGoal)}`}
                     pct={today.chars.pct}
                     met={today.chars.met}
+                    disabled={today.chars.disabled}
                   />
-                )}
-                <p className="mt-1 font-code-sm text-[10px] uppercase tracking-wider text-outline">
+                </div>
+                <p className="mt-2 font-code-sm text-[10px] uppercase tracking-wider text-outline">
                   {today.metCount} of {today.enabledCount} goals met
                 </p>
               </>
             )}
-            <div
-              className="mt-2 flex items-center gap-2 rounded-lg bg-surface-container-lowest px-space-sm py-1.5 font-code-sm text-code-sm text-on-surface-variant"
-              title="Streaks count consecutive days with a finished attempt. Missing a goal never breaks a streak — only a day with no training does."
-            >
-              <span className="material-symbols-outlined text-[14px] text-primary-container">
-                local_fire_department
-              </span>
-              <span>
-                Streak: <strong className="font-bold text-primary">{streak.current} days</strong>{" "}
-                • best {streak.best}
-              </span>
+            {/* §5.2 — tiered encouragement with the streak rule always
+                visible (the old hover `title` hid it). */}
+            <div className="mt-2 rounded-lg bg-surface-container-lowest px-space-sm py-1.5">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[14px] text-primary-container">
+                  local_fire_department
+                </span>
+                <span className="min-w-0 flex-1 font-label-md text-sm font-semibold text-on-surface">
+                  {encouragement.headline}
+                </span>
+                <span className="shrink-0 font-code-sm text-[10px] uppercase tracking-wider text-outline">
+                  best {streak.best}
+                </span>
+              </div>
+              <p className="mt-1 font-code-sm text-[10px] leading-snug text-on-surface-variant">
+                {encouragement.detail}
+              </p>
             </div>
             <div className="mt-2">
               <ConsistencyStrip days={data.strip} variant="compact" />
@@ -700,51 +1065,5 @@ function RecentAttemptModule({ lessonId }: { lessonId: string }) {
     <span>
       {moduleNumber(lesson.level, lesson.orderIndex)} {short}
     </span>
-  );
-}
-
-function GoalBar({
-  icon,
-  label,
-  valueText,
-  pct,
-  met,
-}: {
-  icon: string;
-  label: string;
-  valueText: string;
-  pct: number;
-  met: boolean;
-}) {
-  return (
-    <div className="mb-2 last:mb-0">
-      <div className="flex items-center justify-between font-code-sm text-[10px] uppercase tracking-wider text-on-surface-variant">
-        <span className="flex items-center gap-1.5">
-          <span className="material-symbols-outlined text-[13px] text-primary-container">
-            {icon}
-          </span>
-          {label}
-        </span>
-        <span className="flex items-center gap-1 text-on-surface">
-          {valueText}
-          {met && (
-            <span aria-label={`${label} goal met`} className="font-bold text-primary">
-              ✓
-            </span>
-          )}
-        </span>
-      </div>
-      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-container-highest">
-        <div
-          className={cn(
-            "h-full rounded-full",
-            met
-              ? "bg-primary"
-              : "bg-gradient-to-r from-secondary-container via-primary-container to-primary",
-          )}
-          style={{ width: `${Math.min(100, Math.max(0, Number.isFinite(pct) ? pct : 0))}%` }}
-        />
-      </div>
-    </div>
   );
 }

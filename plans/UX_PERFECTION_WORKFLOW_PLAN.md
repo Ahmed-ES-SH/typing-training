@@ -1,7 +1,7 @@
 # UX & Workflow Redesign Plan: Flow-State & Ergonomic Perfection
 
 > **Document:** `plans/UX_PERFECTION_WORKFLOW_PLAN.md`  
-> **Status:** Proposal / Approved Scope  
+> **Status:** Approved — **Phases 1–6 all implemented & verified (2026-09-26)**.  
 > **Scope:** Full-app workflow redesign, keyboard-first navigation, friction elimination, screen loops, and developer ergonomics.  
 > **Complementary Plan:** Sensory audio, sound packs, visual particles, combo fire, and game-feel are exclusively detailed in `plans/GAMIFICATION_AND_POLISH_PLAN.md`.  
 > **Guiding Principle:** Every action in the app must be executable without touching the mouse; every transition must preserve flow-state; zero dead keys and zero hesitation.
@@ -74,34 +74,36 @@ gantt
     title TypeKernel Workflow & Ergonomics Roadmap
     dateFormat  YYYY-MM-DD
     section Phase 1: Golden Loop
-    Seamless Attempt Flow & Instant Retry  :p1_1, 2026-10-01, 3d
-    Zen Focus Mode (Keyboard Toggle)        :p1_2, after p1_1, 2d
-    Whitespace Diagnostics & Focus Shield   :p1_3, after p1_2, 2d
+    Seamless Attempt Flow & Instant Retry  :done, p1_1, 2026-10-01, 3d
+    Zen Focus Mode (Keyboard Toggle)        :done, p1_2, after p1_1, 2d
+    Whitespace Diagnostics & Focus Shield   :done, p1_3, after p1_2, 2d
     section Phase 2: Command & Hotkeys
-    Global Ctrl+K Omnibar                   :p2_1, after p1_3, 4d
-    Global Vim / Alt Screen Nav             :p2_2, after p2_1, 2d
-    Window Traffic-Dot Lifecycle Actions    :p2_3, after p2_2, 1d
+    Global Ctrl+K Omnibar                   :done, p2_1, after p1_3, 4d
+    Global Vim / Alt Screen Nav             :done, p2_2, after p2_1, 2d
+    Window Traffic-Dot Lifecycle Actions    :done, p2_3, after p2_2, 1d
     section Phase 3: Frontier Navigation
-    Sticky Frontier HUD & Level Mini-Map    :p3_1, after p2_3, 3d
-    Symbol & Syntax Search in Lessons       :p3_2, after p3_1, 2d
-    Level Mastery Milestones                :p3_3, after p3_2, 2d
+    Sticky Frontier HUD & Level Mini-Map    :done, p3_1, after p2_3, 3d
+    Symbol & Syntax Search in Lessons       :done, p3_2, after p3_1, 2d
+    Level Mastery Milestones                :done, p3_3, after p3_2, 2d
     section Phase 4: Contextual Weakness
-    1-Click "Drill Missed Keys" (D)         :p4_1, after p3_3, 3d
-    Rapid-Fire Set Transitions (Space)      :p4_2, after p4_1, 2d
-    In-Session Heatmap Glance (H)           :p4_3, after p4_2, 1d
+    1-Click "Drill Missed Keys" (D)         :done, p4_1, after p3_3, 3d
+    Rapid-Fire Set Transitions (Space)      :done, p4_2, after p4_1, 2d
+    In-Session Heatmap Glance (H)           :done, p4_3, after p4_2, 1d
     section Phase 5: Dashboard Habit Engine
-    One-Tap Daily Warmup Routine            :p5_1, after p4_3, 3d
-    Streak Resilience & Recovery Guidance   :p5_2, after p5_1, 2d
-    Dynamic Animated Goal Rings             :p5_3, after p5_2, 2d
+    One-Tap Daily Warmup Routine            :done, p5_1, after p4_3, 3d
+    Streak Resilience & Recovery Guidance   :done, p5_2, after p5_1, 2d
+    Dynamic Animated Goal Rings             :done, p5_3, after p5_2, 2d
     section Phase 6: Developer Ergonomics
-    Custom Lesson Auto-Detabifier           :p6_1, after p5_3, 2d
-    Screen Transitions & Micro-Animations   :p6_2, after p6_1, 2d
-    Accessibility & Focus Ring Audit        :p6_3, after p6_2, 2d
+    Custom Lesson Auto-Detabifier           :done, p6_1, after p5_3, 2d
+    Screen Transitions & Micro-Animations   :done, p6_2, after p6_1, 2d
+    Accessibility & Focus Ring Audit        :done, p6_3, after p6_2, 2d
 ```
 
 ---
 
 ## 4. Phase 1: Frictionless Golden Loop (Session $\leftrightarrow$ Results)
+
+> **Status:** ✅ **Finished** — gate §1.5 verified 2026-09-26.
 
 ### Goal
 Eliminate every hesitation, mouse dependency, and jarring transition between starting a lesson, typing, viewing results, and advancing.
@@ -144,14 +146,27 @@ Eliminate every hesitation, mouse dependency, and jarring transition between sta
 - **Click Shield:** Global listener prevents mouse focus theft; typing resumes seamlessly even if the user clicked on chrome.
 
 #### 1.5 Verification Gate
-- [ ] Failing a lesson and pressing `Enter` immediately restarts the lesson in $<50$ms.
-- [ ] Passing a lesson and pressing `Enter` advances to the next module.
-- [ ] Pressing `F` toggles Zen Mode, expanding the editor to full viewport.
-- [ ] Clicks on window chrome do not drop keystroke input.
+- [x] Failing a lesson and pressing `Enter` immediately restarts the lesson in $<50$ms.
+      (`resultsActionFor()` → `retryLesson()`; from Results the previous session is already
+      `finished`, so `abandon()` no-ops and the restart is a synchronous reset + remount.)
+- [x] Passing a lesson and pressing `Enter` advances to the next module.
+- [x] Zen Mode toggles, expanding the editor to full viewport.
+      **Deviation:** while a session is *running* the toggle is `Ctrl+Shift+F` (or the header
+      `Zen` button); the bare `F` is honoured only when the session is not actively typing,
+      because `f` is an ordinary lesson character and binding it mid-run would eat keystrokes.
+- [x] Clicks on window chrome do not drop keystroke input.
+      (The session key listener is bound to `window`; additionally a `button`/`a` left focused
+      by a stray click is blurred before the key is dispatched, so Space/Enter are never swallowed.)
+
+> **Scope note:** the `D` → 45s Micro-Drill action named in §1.1 belongs to **Phase 4** per the
+> roadmap (§3 gantt: `1-Click "Drill Missed Keys" (D)`); it ships with §7.1 together with the
+> missed-keys card, threshold and return-to-results flow.
 
 ---
 
 ## 5. Phase 2: Keyboard-First Command & Control (Command Palette & Hotkeys)
+
+> **Status:** ✅ **Finished** — gate §2.4 verified 2026-09-26.
 
 ### Goal
 Provide complete control over the entire operating environment from the home row without ever reaching for a pointing device.
@@ -188,14 +203,28 @@ Provide complete control over the entire operating environment from the home row
   - Green dot $\to$ Toggle Fullscreen / Maximize.
 
 #### 2.4 Verification Gate
-- [ ] `Ctrl+K` opens the Command Palette from any screen.
-- [ ] Typing "Regex" in the palette lists all regex lessons; pressing `Enter` starts the selected lesson directly.
-- [ ] `Alt+1`..`Alt+6` reliably switch screens.
-- [ ] Traffic dots minimize/maximize the Tauri desktop window.
+- [x] `Ctrl+K` opens the Command Palette from any screen.
+      (`GlobalHotkeys` mounts once in `App.tsx`; the chord survives editable
+      focus and a running session — the only binding that does, by design.)
+- [x] Typing "Regex" in the palette lists all regex lessons; pressing `Enter` starts the selected lesson directly.
+      (AND-token scorer + stable ranking in `lib/hotkeys/globalHotkeys.ts`;
+      lessons match by title, module code (`L3-014`), tags and target keys.)
+- [x] `Alt+1`..`Alt+6` reliably switch screens.
+      (Suppressed only while an editable field owns the keystroke.)
+- [x] Traffic dots minimize/maximize the Tauri desktop window.
+      (`core:window:allow-minimize|toggle-maximize|close` added to
+      `src-tauri/capabilities/default.json`; the API loads behind a
+      `__TAURI_INTERNALS__` guard, so plain-browser dev keeps inert dots.)
+
+> **Deviation:** the Lessons screen's former local `Ctrl+K` → focus-search
+> binding was removed — the palette searches lessons (title, module code,
+> tags, target keys), so two handlers on one chord double-fired.
 
 ---
 
 ## 6. Phase 3: Streamlined Curriculum & Frontier Navigation
+
+> **Status:** ✅ **Finished** — gate §3.5 verified 2026-09-26.
 
 ### Goal
 Turn the 260-lesson curriculum from an overwhelming list into an inviting, easily navigable progression path.
@@ -226,14 +255,27 @@ Turn the 260-lesson curriculum from an overwhelming list into an inviting, easil
   - 1-Click option: "Advance to Level X" or "Review Weak Keys".
 
 #### 3.5 Verification Gate
-- [ ] Sticky bottom HUD stays visible during scroll and `Enter` resumes the active frontier.
-- [ ] Level rail jumps smoothly to level sections.
-- [ ] Clicking the `{ Brackets }` chip filters to lessons containing curly braces.
-- [ ] Completing a level triggers the milestone summary overlay.
+- [x] Sticky bottom HUD stays visible during scroll and `Enter` resumes the active frontier.
+      (Focus-shielded: `Enter` is ignored while the search field, any other
+      editable control, the milestone modal or the Command Palette owns focus;
+      the bar's `left` is measured from the content column so it never slides
+      under the collapsible sidebar.)
+- [x] Level rail jumps smoothly to level sections.
+      (`hidden xl:flex` right rail; filtered-out levels dim and disable;
+      golden "Level Complete" badge on 100% headers.)
+- [x] Clicking the `{ Brackets }` chip filters to lessons containing curly braces.
+      (Chips OR within the chip bar, AND with query/status/level; `frontierNav.test.ts`
+      asserts every chip matches >0 of the real 260-lesson curriculum.)
+- [x] Completing a level triggers the milestone summary overlay.
+      (Pure `nextMilestoneToCelebrate` over progress + localStorage
+      acknowledgements `typekernel.milestone.L<n>` — each level celebrated
+      once, freshest pending level first, so a stale save can't chain modals.)
 
 ---
 
 ## 7. Phase 4: Seamless Adaptive Weakness Integration
+
+> **Status:** ✅ **Finished** — gate §4.4 verified 2026-09-26 (incl. the §4.3 `H` heatmap glance).
 
 ### Goal
 Bridge the gap between general curriculum training and weakness elimination, making weakness drills a natural, instant micro-habit.
@@ -257,13 +299,32 @@ Bridge the gap between general curriculum training and weakness elimination, mak
 - Pressing `H` during a session toggles a semi-transparent floating key heatmap badge in the corner without interrupting typing focus.
 
 #### 4.4 Verification Gate
-- [ ] Pressing `D` on Lesson Results generates an immediate micro-drill on missed tokens.
-- [ ] Finishing a weakness set allows pressing `Space` to begin the next set instantly.
-- [ ] Weakness metrics properly update SQLite rollups without touching curriculum unlock gates.
+- [x] Pressing `D` on Lesson Results generates an immediate micro-drill on missed tokens.
+      (Worst ≥2-miss keys, top 3; `buildMicroDrillPlan` emits one 112-key set
+      ≈45 s, deterministic, ≥3 occurrences per key; metrics flow through the
+      existing `kind='weakness'` finish pipeline.)
+- [x] Finishing a weakness set allows pressing `Space` to begin the next set instantly.
+      (`Enter` also advances; a 1.5 s auto-countdown (skippable) re-checks the
+      live phase before resuming, so no stray timer can start a set later.)
+- [x] Weakness metrics properly update SQLite rollups without touching curriculum unlock gates.
+      (Store-pipeline test: one weakness attempt written, zero
+      `lesson_progress` rows touched.)
+
+> **Deviations:**
+> (1) Mid-run the heatmap glance is `Ctrl+Shift+H`; bare `H` is honoured only
+> while the session is idle, because `h` is a lesson character — identical to
+> the §4.1.3 bare-`F` rule (the header button always works).
+> (2) Micro-drill completion offers `[Enter] Return to Results` (the hint is
+> bound to that drill's plan id, so an abandoned drill can never leak a stale
+> jump); advancing stays Smart-Enter's job on Results.
+> (3) `D` bypasses the `adaptiveLessons` generator toggle — it is an explicit
+> one-click action.
 
 ---
 
 ## 8. Phase 5: Flow-State Dashboard & Daily Habit Engine
+
+> **Status:** ✅ **Finished** — gate §5.4 verified 2026-09-26.
 
 ### Goal
 Make opening TypeKernel every morning an irresistible, frictionless 15-minute daily habit for developers.
@@ -288,13 +349,34 @@ Make opening TypeKernel every morning an irresistible, frictionless 15-minute da
 - When completing daily goals (Minutes, Lessons, Characters), animate the progress ring to 100% with a subtle golden glow and checkmark.
 
 #### 5.4 Verification Gate
-- [ ] Pressing `Enter` on the Dashboard starts the recommended daily routine.
-- [ ] Completing daily goals triggers the completed state animation.
-- [ ] Streaks properly update and survive single-goal misses.
+- [x] Pressing `Enter` on the Dashboard starts the recommended daily routine.
+      (Pure `dashboardEnterAction()` in `lib/stats/dailyRoutine.ts` + the guarded
+      window listener in `DashboardScreen` — repeat/modifiers/editable/modal-open/
+      wrong-screen/focused-control guards all retained. Unstarted → START (writes
+      the per-day clock, then launches the first *launchable* pending step, so an
+      unavailable step falls through in the same click); started → CONTINUE; only a
+      COMPLETE routine hands Enter back to Resume Frontier — and the resume card's
+      `(Enter)` badge renders only then, so the UI never lies about the key.)
+- [x] Completing daily goals triggers the completed state animation.
+      (`GoalRing` commits at 0 and sweeps to the real pct one rAF later
+      (`transition-[stroke-dashoffset] duration-700`), so the remount after a
+      finished attempt always animates the arc, and `met` adds the primary ring
+      + scale-in check pop. Reduce-motion kills the transition and lands on the
+      final state directly.)
+- [x] Streaks properly update and survive single-goal misses.
+      (Structural: `getStreak` walks *activity* days only — a goal-miss can never
+      break it; rule documented in `dailyService.ts` and covered by
+      `dailyService.test.ts`, incl. the inactivity-gap walk.)
 
 ---
 
 ## 9. Phase 6: Developer Ergonomics, Detabifier & Polish
+
+> **Status:** ✅ **Finished** — gate §6.4 verified 2026-09-26 (incl. §6.3's modal
+> focus-trap + `Esc` dismiss and the global `:focus-visible` rule shipped earlier
+> the same day; the audit additionally fixed the level-`<select>` and Command
+> Palette input rings, added `Modal` `aria-labelledby`, and the reduced-motion
+> scroll guard in Settings).
 
 ### Goal
 Provide high-end developer conveniences and ensure effortless accessibility across all inputs.
@@ -316,9 +398,31 @@ Provide high-end developer conveniences and ensure effortless accessibility acro
 - Ensure all modal dialogues trap keyboard focus and dismiss on `Esc`.
 
 #### 6.4 Verification Gate
-- [ ] Pasting code with tabs into Custom Lessons automatically converts them to spaces without validation error.
-- [ ] Screen transitions feel instant, crisp, and free of jitter.
-- [ ] Focus rings are visible on keyboard navigation across all screens.
+- [x] Pasting code with tabs into Custom Lessons automatically converts them to spaces without validation error.
+      (`onPaste` on the Content textarea intercepts only tab-bearing payloads
+      (tab-free paste stays native), splices the pure `detabify(text, tabSize)`
+      result over the selection and restores the caret one frame later; a silent
+      `onChange` safety net covers drag-drop/IME. `tabSize` is a Settings →
+      Appearance key (2 | 4, default **2** — the curriculum's dominant 2-space
+      indent). The schema's "tabs are not supported" refine is untouched;
+      `detabify.test.ts` covers the helper.)
+- [x] Screen transitions feel instant, crisp, and free of jitter.
+      (App.tsx keyed wrapper `key={activeScreen}` around the Suspense + the
+      `--animate-screen-in` 150 ms ease-out fade from `styles.css`; tab switches
+      animate via the measured sliding indicator in `PillGroup`, the shared
+      primitive behind the Custom Lessons filters and every Settings pill group.)
+      **Deviation — opacity only, no `scale()`:** a transform on the wrapper
+      would make it the containing block for the screens' `fixed` chrome
+      (`LevelMiniMap` jumps ~20 px, `FrontierHud` measures ~3.5 px wrong), i.e.
+      exactly the jitter this task exists to remove; opacity establishes no
+      containing block. Reduce-motion leaves the resting (visible) state.
+- [x] Focus rings are visible on keyboard navigation across all screens.
+      (Global `:where(a, button, input, select, textarea, [tabindex]):focus-visible`
+      outline rule in `styles.css` — keyboard-only, on-palette, radius-following.)
+- [x] All modal dialogues trap keyboard focus and dismiss on `Esc`.
+      (2026-09-26: capture-phase Escape + Tab trap + focus restore in `Modal`,
+      `ShortcutsModal`, `CommandPalette`; stacked overlays resolved by
+      topmost-dialog ownership.)
 
 ---
 
@@ -333,11 +437,11 @@ Provide high-end developer conveniences and ensure effortless accessibility acro
 | **Session** | `F` | Toggle Zen / Focus Mode | Maximizes code buffer, hides distractions. |
 | **Session** | `Tab + Enter` | Instant Buffer Reset | Immediate retry without mouse reach. |
 | **Session** | `Esc` | Abandon & Return | Clean, safe exit back to curriculum. |
-| **Session** | `H` | Toggle Heatmap Glance | Check weak keys mid-session without stopping. |
+| **Session** | `H` / `Ctrl+Shift+H` | Toggle Heatmap Glance | Check weak keys mid-session (chord while running, bare `H` when idle). |
 | **Results** | `Enter` (Pass) | Advance to Next Lesson | Continuous forward momentum on success. |
 | **Results** | `Enter` / `Space` (Fail) | Instant Retry | Zero-friction immediate second attempt. |
 | **Results** | `D` | Launch 45s Micro-Drill | Targeted fix for the exact keys failed. |
 | **Results** | `Space` (Pass) | Replay for PR | Polish speed without advancing. |
 | **Results** | `Esc` | Return to Curriculum | Overview view. |
-| **Dashboard** | `Enter` | Resume Active Frontier | 0-click resumption upon app launch. |
-| **Weakness** | `Space` | Advance to Next Set | Flow-state drill progression. |
+| **Dashboard** | `Enter` | Start Daily Routine (Resume Frontier once complete) | 0-click entry into the daily habit loop. |
+| **Weakness** | `Space` / `Enter` | Advance to Next Set | Flow-state drill progression (1.5 s countdown, skippable). |

@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import type { ComponentType } from "react";
 
 import { Shell } from "./components/Shell";
+import { GlobalHotkeys } from "./components/GlobalHotkeys";
 import { NavSidebar } from "./components/NavSidebar";
 import { TopBar } from "./components/TopBar";
 import type { ScreenId } from "./lib/screens";
@@ -114,18 +115,29 @@ function App() {
       <TopBar />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden">
         <NavSidebar />
-        <Suspense
-          fallback={
-            <main className="flex w-full flex-1 items-center justify-center bg-surface">
-              <span className="animate-pulse font-code-sm text-code-sm uppercase tracking-widest text-outline">
-                Loading module…
-              </span>
-            </main>
-          }
-        >
-          <ActiveScreen />
-        </Suspense>
+        {/* UX plan §6.2 — keyed wrapper so BOTH the screen swap and the lazy
+            Suspense fallback run the `animate-screen-in` transition. The key
+            preserves today's remount semantics exactly (component-type swap
+            already remounts; same-screen param changes still do not). */}
+        <div key={activeScreen} className="flex min-h-0 min-w-0 w-full flex-1 animate-screen-in">
+          <Suspense
+            fallback={
+              <main className="flex w-full flex-1 items-center justify-center bg-surface">
+                <span className="animate-pulse font-code-sm text-code-sm uppercase tracking-widest text-outline">
+                  Loading module…
+                </span>
+              </main>
+            }
+          >
+            <ActiveScreen />
+          </Suspense>
+        </div>
       </div>
+      {/* UX plan §5.2 — global hotkeys (Ctrl/Cmd+K, Alt+1..6, /, ?, vim
+          chords) plus the two overlays they drive. Mounted LAST so the
+          palette/sheet win z-index ties against screen modals (milestone
+          card), while their listeners keep guarding every screen key. */}
+      <GlobalHotkeys />
     </Shell>
   );
 }

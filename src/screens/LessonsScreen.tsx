@@ -1,24 +1,50 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   CURRICULUM_LEVELS,
   TOTAL_LESSONS,
+  getLesson,
   type CurriculumLevel,
 } from "../content";
 import { attemptsRepo, keyStatsRepo } from "../lib/db/repositories";
 import { ACCURACY_GATE } from "../lib/curriculum/rules";
+import {
+  SYMBOL_CHIPS,
+  averageLevelStats,
+  firstAvailableLessonInLevel,
+  matchesAnySymbolChip,
+  milestoneAckKey,
+  nextMilestoneToCelebrate,
+  pendingMilestoneLevels,
+  summarizeLevel,
+  type SymbolChipId,
+} from "../lib/curriculum/frontierNav";
 import { fmt1, moduleNumber } from "../lib/format";
 import type { KeyStatRow, Lesson, LessonProgress } from "../lib/schemas";
 import { cn } from "../lib/cn";
+import { FrontierHud } from "../components/FrontierHud";
+import { LevelMiniMap, type MiniMapEntry } from "../components/LevelMiniMap";
+import { LevelMilestoneModal } from "../components/LevelMilestoneModal";
 import { StatusPill } from "../components/StatusPill";
 import { useSettingsStore } from "../stores/useSettingsStore";
-import { lessonStatus, useCurriculumStore } from "../stores/useCurriculumStore";
+import { useUiStore } from "../stores/useUiStore";
+import {
+  currentLesson,
+  lessonStatus,
+  useCurriculumStore,
+} from "../stores/useCurriculumStore";
 
 /**
  * Lessons screen — implemented from `screens/all_lessons_typekernel/code.html`
  * (design `code.html` + `screen.png`): hero banner with mastery gauge,
  * search + status filter control bar, expandable level sections with module
  * cards, and the symbol latency telemetry strip.
+ *
+ * Phase 3 (UX plan §6.1–§6.4) adds the frontier layer on top of that static
+ * design: the sticky Resume-Frontier HUD, the L1..L7 mini-map jump rail, the
+ * instant syntax/symbol chip bar and the level milestone modal. Every rule
+ * behind them lives in `lib/curriculum/frontierNav.ts` (unit-tested); this
+ * screen only wires state, refs and the keyboard guards (§4.1.4).
  *
  * All displayed progress data comes from `lesson_progress` / attempts
  * aggregates — the DB is the only source of truth (PRD §7 trust). When the
@@ -52,6 +78,11 @@ const LEVEL_ICONS: Record<number, string> = {
   6: "data_object",
   7: "terminal",
 };
+
+/** Stable DOM id of a level's section wrapper — the header's `aria-controls`. */
+function levelSectionId(level: number): string {
+  return `level-section-${level}`;
+}
 
 /* ---------------------------------------------------------------------------
  * Hero banner
@@ -217,7 +248,11 @@ function CodePreview({ lesson, locked }: { lesson: Lesson; locked: boolean }) {
   );
 }
 
-function ModuleCard({
+/**
+ * Lesson card — memoized so filter/search keystrokes on the screen never
+ * re-render the 260 cards (props are stable: lesson, progress row, viewMode).
+ */
+const ModuleCard = memo(function ModuleCard({
   lesson,
   progress,
   viewMode,
@@ -411,7 +446,7 @@ function ModuleCard({
       {footer}
     </div>
   );
-}
+});
 
 /* ---------------------------------------------------------------------------
  * Level sections
@@ -428,40 +463,50 @@ function LevelHeader({
   progress: Record<string, LessonProgress>;
   completedCount: number;
   expanded: boolean;
-  onToggle: () => void;
+  onToggle: (level: number) => void;
 }) {
   const total = level.lessons.length;
   const isComplete = completedCount === total;
   const isUntouched = completedCount === 0;
   const isActive = !isComplete && !isUntouched;
 
-  // Average best stats over attempted lessons (DB truth, not invented).
-  const attempted = level.lessons.filter(
-    (lesson) => (progress[lesson.id]?.attemptCount ?? 0) > 0,
-  );
-  const avgWpm = attempted.length
-    ? attempted.reduce((sum, l) => sum + (progress[l.id]?.bestWpm ?? 0), 0) / attempted.length
-    : null;
-  const avgAcc = attempted.length
-    ? attempted.reduce((sum, l) => sum + (progress[l.id]?.bestAccuracy ?? 0), 0) / attempted.length
-    : null;
+  // Average best stats over attempted lessons (DB truth, not invented) —
+  // the same pure helper the §6.4 milestone modal reads, so the numbers can
+  // never drift apart between the two surfaces.
+  const stats = averageLevelStats(level.level, progress);
+  const avgWpm = stats?.wpm ?? null;
+  const avgAcc = stats?.accuracy ?? null;
 
   return (
-    <button
-      type="button"
-      onClick={onToggle}
+    <div
       className={cn(
-        "flex w-full flex-col justify-between gap-space-sm rounded-xl p-space-base text-left transition-all sm:flex-row sm:items-center",
+        "relative flex w-full flex-col justify-between gap-space-sm rounded-xl p-space-base text-left transition-all sm:flex-row sm:items-center",
         isActive
-          ? "relative overflow-hidden bg-surface-container shadow-2xl"
+          ? "overflow-hidden bg-surface-container shadow-2xl"
           : isUntouched
             ? "bg-surface-container-lowest/50 opacity-60"
-            : "cursor-pointer bg-surface-container-lowest hover:bg-surface-container-low",
+            : "bg-surface-container-lowest hover:bg-surface-container-low",
       )}
     >
       {isActive && expanded && (
-        <div className="absolute left-0 right-0 top-0 h-1 rounded-t bg-primary-container/80" />
+        <div className="pointer-events-none absolute left-0 right-0 top-0 h-1 rounded-t bg-primary-container/80" />
       )}
+      {/* The <h3> may not live inside a <button> (invalid content model), so
+          the card itself is a plain container and a full-bleed transparent
+          overlay keeps the whole header clickable while carrying the
+          disclosure semantics (aria-expanded / aria-controls). */}
+      <button
+        type="button"
+        onClick={() => onToggle(level.level)}
+        aria-expanded={expanded}
+        aria-controls={levelSectionId(level.level)}
+        aria-label={
+          expanded
+            ? `Collapse level ${level.level} — ${level.name}`
+            : `Expand level ${level.level} — ${level.name}`
+        }
+        className="absolute inset-0 z-10 cursor-pointer rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-container"
+      />
       <div className="flex items-center gap-space-base">
         <div
           className={cn(
@@ -478,7 +523,7 @@ function LevelHeader({
           </span>
         </div>
         <div>
-          <div className="flex items-center gap-space-xs">
+          <div className="flex flex-wrap items-center gap-space-xs">
             <span
               className={cn(
                 "text-xs font-semibold",
@@ -496,6 +541,16 @@ function LevelHeader({
                   ? `${completedCount} of ${total} mastered`
                   : `Locked (0/${total})`}
             </StatusPill>
+            {isComplete && (
+              /* UX plan §6.2 — the golden badge with the level's tier label. */
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
+                <span className="material-symbols-outlined text-[13px]">
+                  emoji_events
+                </span>
+                Level Complete
+                {level.tagline !== "" ? ` · ${level.tagline}` : ""}
+              </span>
+            )}
           </div>
           <h3
             className={cn(
@@ -532,22 +587,29 @@ function LevelHeader({
           {expanded ? "expand_less" : "expand_more"}
         </span>
       </div>
-    </button>
+    </div>
   );
 }
 
-function LevelSection({
+/**
+ * One expandable level — memoized so a search keystroke (which force-expands
+ * every section) re-renders the header only when its own props change.
+ */
+const LevelSection = memo(function LevelSection({
   level,
   progress,
   expanded,
   onToggle,
   viewMode,
+  sectionRef,
 }: {
   level: CurriculumLevel;
   progress: Record<string, LessonProgress>;
   expanded: boolean;
-  onToggle: () => void;
+  onToggle: (level: number) => void;
   viewMode: ViewMode;
+  /** §6.2 jump anchor — the mini-map scrolls this wrapper into view. */
+  sectionRef?: (element: HTMLDivElement | null) => void;
 }) {
   const completedCount = level.lessons.filter(
     (lesson) => lessonStatus(progress, lesson.id) === "completed",
@@ -557,7 +619,7 @@ function LevelSection({
   );
 
   return (
-    <div className="flex flex-col">
+    <div id={levelSectionId(level.level)} ref={sectionRef} className="flex flex-col scroll-mt-2">
       <LevelHeader
         level={level}
         progress={progress}
@@ -603,7 +665,7 @@ function LevelSection({
       )}
     </div>
   );
-}
+});
 
 /* ---------------------------------------------------------------------------
  * Symbol latency telemetry
@@ -613,13 +675,21 @@ const FOCUS_SYMBOLS = [
   "-", ">", ":", "&", "=", "(", ")", "{", "}", "[", "]", ";", "_", "*", "/", "!", "?",
 ];
 
-function SymbolTelemetry({ keys }: { keys: KeyStatRow[] }) {
+/**
+ * Symbol latency strip — memoized (and the chip ranking memoized) so the
+ * screen's search keystrokes never re-run the filter/sort over `keyStats`.
+ */
+const SymbolTelemetry = memo(function SymbolTelemetry({ keys }: { keys: KeyStatRow[] }) {
   // Only programming-symbol chips, ranked by volume; hidden entirely when
   // there is not enough data (graceful empty state per the plan).
-  const chips = keys
-    .filter((row) => FOCUS_SYMBOLS.includes(row.key) && row.totalPresses >= 5)
-    .sort((a, b) => b.totalPresses - a.totalPresses)
-    .slice(0, 7);
+  const chips = useMemo(
+    () =>
+      keys
+        .filter((row) => FOCUS_SYMBOLS.includes(row.key) && row.totalPresses >= 5)
+        .sort((a, b) => b.totalPresses - a.totalPresses)
+        .slice(0, 7),
+    [keys],
+  );
 
   if (chips.length === 0) return null;
 
@@ -686,7 +756,7 @@ function SymbolTelemetry({ keys }: { keys: KeyStatRow[] }) {
       </div>
     </div>
   );
-}
+});
 
 /* ---------------------------------------------------------------------------
  * Screen
@@ -698,9 +768,41 @@ function matchesQuery(lesson: Lesson, query: string): boolean {
   return (
     lesson.title.toLowerCase().includes(q) ||
     lesson.description.toLowerCase().includes(q) ||
+    lesson.content.toLowerCase().includes(q) ||
     lesson.tags.some((tag) => tag.toLowerCase().includes(q)) ||
     lesson.targetKeys.some((key) => key.toLowerCase().includes(q))
   );
+}
+
+/* ---------------------------------------------------------------------------
+ * §6.4 milestone acknowledgements — localStorage IO lives here (the pure
+ * "which level do we celebrate" rule is `nextMilestoneToCelebrate` in
+ * `lib/curriculum/frontierNav`). One celebration per level FOREVER: the ack
+ * must survive an app restart, so a fresh launch with a completed level
+ * never re-shows the "Level N Mastered" card. Best-effort: private-mode
+ * storage failures only mean the level is celebrated again on the next
+ * visit. Keys keep the `typekernel.milestone.L<n>` namespace either way.
+ * ------------------------------------------------------------------------- */
+
+function readMilestoneAcks(): Set<string> {
+  const acks = new Set<string>();
+  try {
+    for (const level of CURRICULUM_LEVELS) {
+      const key = milestoneAckKey(level.level);
+      if (localStorage.getItem(key) !== null) acks.add(key);
+    }
+  } catch {
+    /* storage unavailable */
+  }
+  return acks;
+}
+
+function acknowledgeMilestone(level: number): void {
+  try {
+    localStorage.setItem(milestoneAckKey(level), "1");
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export default function LessonsScreen() {
@@ -715,7 +817,13 @@ export default function LessonsScreen() {
   const [manualExpanded, setManualExpanded] = useState<Set<number> | null>(null);
   const [rolling, setRolling] = useState<{ wpm: string; acc: string } | null>(null);
   const [keyStats, setKeyStats] = useState<KeyStatRow[]>([]);
-  const searchRef = useRef<HTMLInputElement | null>(null);
+  // §6.3 chip bar (multi-select) and §6.4 milestone modal.
+  const [symbolChips, setSymbolChips] = useState<Set<SymbolChipId>>(new Set());
+  const [milestone, setMilestone] = useState<number | null>(null);
+  // §6.2 jump anchors + §6.1 HUD viewport offset.
+  const mainRef = useRef<HTMLElement | null>(null);
+  const levelRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const [hudLeft, setHudLeft] = useState(0);
 
   // Active engagement level = first level containing an available lesson.
   const activeLevel = useMemo(() => {
@@ -727,15 +835,175 @@ export default function LessonsScreen() {
     return null;
   }, [progress]);
 
-  const toggleLevel = (level: number) => {
-    setManualExpanded((prev) => {
-      const base = prev ?? (activeLevel !== null ? new Set([activeLevel]) : new Set([1]));
-      const next = new Set(base);
-      if (next.has(level)) next.delete(level);
-      else next.add(level);
+  // Any query/status/level/chip filter force-expands every section, so a
+  // header click would write `manualExpanded` with no visible effect — the
+  // toggle is a documented no-op while this is true.
+  const searching =
+    query.trim() !== "" ||
+    statusFilter !== "all" ||
+    levelFilter !== "all" ||
+    symbolChips.size > 0;
+
+  // Derived, memoized: a fresh Set identity on every render would defeat the
+  // `React.memo` wrappers on LevelSection/LevelHeader.
+  const expandedLevels = useMemo(
+    () => manualExpanded ?? (activeLevel !== null ? new Set([activeLevel]) : new Set([1])),
+    [manualExpanded, activeLevel],
+  );
+
+  const toggleLevel = useCallback(
+    (level: number) => {
+      if (searching) return;
+      setManualExpanded((prev) => {
+        const base = prev ?? (activeLevel !== null ? new Set([activeLevel]) : new Set([1]));
+        const next = new Set(base);
+        if (next.has(level)) next.delete(level);
+        else next.add(level);
+        return next;
+      });
+    },
+    [searching, activeLevel],
+  );
+
+  /** §6.3 chip toggles — multi-select, OR inside the bar, AND with the rest. */
+  const toggleChip = useCallback((chipId: SymbolChipId) => {
+    setSymbolChips((prev) => {
+      const next = new Set(prev);
+      if (next.has(chipId)) next.delete(chipId);
+      else next.add(chipId);
       return next;
     });
+  }, []);
+
+  /** Empty-state reset — clears query + status + level + chips in one click. */
+  const clearFilters = useCallback(() => {
+    setQuery("");
+    setStatusFilter("all");
+    setLevelFilter("all");
+    setSymbolChips(new Set());
+  }, []);
+
+  // Stable per-level `sectionRef` callbacks: an inline arrow in the render
+  // below would be a new prop identity for every section on every keystroke.
+  const sectionRefCallbacks = useRef<Record<number, (element: HTMLDivElement | null) => void>>(
+    {},
+  );
+  const sectionRefFor = (level: number): ((element: HTMLDivElement | null) => void) => {
+    const existing = sectionRefCallbacks.current[level];
+    if (existing !== undefined) return existing;
+    const callback = (element: HTMLDivElement | null) => {
+      levelRefs.current[level] = element;
+    };
+    sectionRefCallbacks.current[level] = callback;
+    return callback;
   };
+
+  // §6.1: the fixed HUD tracks this screen's own left edge so the collapsible
+  // NavSidebar (z-30) never lands on top of the bar — or vice versa. The
+  // observer also follows the sidebar's collapse/expand width transition,
+  // which fires a ResizeObserver callback per animation frame: coalesce those
+  // through a single requestAnimationFrame so one sidebar toggle costs one
+  // state update instead of dozens of whole-screen re-renders.
+  useLayoutEffect(() => {
+    const element = mainRef.current;
+    if (element === null) return;
+    let frame: number | null = null;
+    const schedule = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        setHudLeft(element.getBoundingClientRect().left);
+      });
+    };
+    // Measure once synchronously so the bar never paints at `left: 0`; every
+    // ResizeObserver tick that follows is coalesced through `schedule`.
+    setHudLeft(element.getBoundingClientRect().left);
+    const observer = new ResizeObserver(schedule);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [loaded]);
+
+  // §6.4 trigger. On mount every level that is 100% complete but never
+  // acknowledged is celebrated once (acknowledged immediately, so later
+  // visits stay quiet); a 0→100 transition while the screen stays mounted
+  // re-runs this effect because the store replaces `progress` wholesale.
+  // The freshest completion is shown, the whole pending batch acknowledged —
+  // a stale save can never chain back-to-back modals.
+  useEffect(() => {
+    if (!loaded) return;
+    const acks = readMilestoneAcks();
+    const celebration = nextMilestoneToCelebrate(acks, progress);
+    if (celebration === null) return;
+    for (const level of pendingMilestoneLevels(acks, progress)) {
+      acknowledgeMilestone(level);
+    }
+    setMilestone(celebration);
+  }, [progress, loaded]);
+
+  /** §6.1 frontier label + level mastery for the sticky HUD. */
+  const frontier = useMemo(() => currentLesson(progress), [progress]);
+  const frontierMastery = useMemo(
+    () => (frontier !== null ? summarizeLevel(frontier.level, progress) : null),
+    [frontier, progress],
+  );
+  const frontierLabel = useMemo(() => {
+    if (frontier === null) return null;
+    const lesson = getLesson(frontier.id);
+    return lesson == null
+      ? { moduleNo: `L${frontier.level}`, title: frontier.title }
+      : { moduleNo: moduleNumber(lesson.level, lesson.orderIndex), title: lesson.title };
+  }, [frontier]);
+
+  /** §6.2 mini-map jump — scroll the level header into view (honouring
+   *  `prefers-reduced-motion` rather than always animating). */
+  const jumpToLevel = useCallback((level: number) => {
+    const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth";
+    levelRefs.current[level]?.scrollIntoView({ behavior, block: "start" });
+  }, []);
+
+  // §6.4 primary action: start the next level's first available lesson, or
+  // fall back to scrolling its header into view when nothing is available
+  // (DB unavailable → everything reads as locked). Memoized so the milestone
+  // modal's window listener does not re-register on every keystroke.
+  const advanceToLevel = useCallback(
+    (level: number) => {
+      const lesson = firstAvailableLessonInLevel(level, progress);
+      if (lesson !== null) {
+        useCurriculumStore.getState().startLesson(lesson.id);
+        return;
+      }
+      setManualExpanded((prev) => {
+        const base = prev ?? (activeLevel !== null ? new Set([activeLevel]) : new Set([1]));
+        const next = new Set(base);
+        next.add(level);
+        return next;
+      });
+      jumpToLevel(level);
+    },
+    [progress, activeLevel, jumpToLevel],
+  );
+
+  // §6.1/§6.4 — stable callbacks for the HUD + milestone modal. Both own
+  // window key listeners whose effect deps include these props, so inline
+  // arrows would tear them down and re-register on every keystroke.
+  const resumeFrontier = useCallback(() => {
+    if (frontier !== null) useCurriculumStore.getState().startLesson(frontier.id);
+  }, [frontier]);
+  const advanceMilestone = useCallback(() => {
+    if (milestone === null) return;
+    setMilestone(null);
+    advanceToLevel(milestone + 1);
+  }, [milestone, advanceToLevel]);
+  const reviewWeakKeys = useCallback(() => {
+    setMilestone(null);
+    useUiStore.getState().navigate("weakness-training");
+  }, []);
+  const closeMilestone = useCallback(() => setMilestone(null), []);
 
   // Counts over the whole curriculum for the filter pills.
   const counts = useMemo(() => {
@@ -779,18 +1047,9 @@ export default function LessonsScreen() {
     };
   }, [loaded, progress]);
 
-  // Ctrl+K focuses search (per the design's micro-interaction script).
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        searchRef.current?.focus();
-        searchRef.current?.select();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  // UX plan §5.1: Ctrl+K now belongs to the global Command Palette, which
+  // searches this screen's lessons (and more) — the old local "focus search"
+  // binding would have double-fired next to it.
 
   // Hero gauge + focus label.
   const gauge = useMemo(() => {
@@ -819,21 +1078,38 @@ export default function LessonsScreen() {
     return lesson && meta ? `Level ${meta.level}: ${meta.name}` : "—";
   }, [gauge.nextAvailableId, dbError]);
 
-  // Filtering pipeline: search -> status pill -> level dropdown.
+  // Filtering pipeline: search -> syntax chips -> status pill -> level dropdown.
   const visibleLevels = useMemo(() => {
     return CURRICULUM_LEVELS.map((level) => ({
       level,
       lessons: level.lessons.filter((lesson) => {
         if (!matchesQuery(lesson, query)) return false;
+        if (!matchesAnySymbolChip(lesson, symbolChips)) return false;
         if (statusFilter !== "all" && statusOf(progress[lesson.id]) !== statusFilter) return false;
         if (levelFilter !== "all" && level.level !== levelFilter) return false;
         return true;
       }),
     })).filter((entry) => entry.lessons.length > 0);
-  }, [query, statusFilter, levelFilter, progress]);
+  }, [query, symbolChips, statusFilter, levelFilter, progress]);
 
-  const searching = query.trim() !== "" || statusFilter !== "all" || levelFilter !== "all";
-  const expandedLevels = manualExpanded ?? (activeLevel !== null ? new Set([activeLevel]) : new Set([1]));
+  // §6.2 mini-map: completion per level + which entries the filters removed.
+  const miniMapEntries: MiniMapEntry[] = useMemo(() => {
+    const visible = new Set(visibleLevels.map((entry) => entry.level.level));
+    return CURRICULUM_LEVELS.map((level) => {
+      const mastery = summarizeLevel(level.level, progress);
+      return {
+        level: mastery.level,
+        name: mastery.name,
+        tier: mastery.tier,
+        completed: mastery.completed,
+        total: mastery.total,
+        pct: mastery.pct,
+        complete: mastery.complete,
+        current: activeLevel === level.level,
+        visible: visible.has(level.level),
+      };
+    });
+  }, [progress, visibleLevels, activeLevel]);
 
   if (!loaded) {
     return (
@@ -846,8 +1122,12 @@ export default function LessonsScreen() {
   }
 
   return (
-    <main className="w-full flex-1 overflow-y-auto bg-surface px-gutter-desktop pb-space-lg pt-4">
-      <div className="flex w-full flex-col">
+    <main
+      ref={mainRef}
+      className="w-full flex-1 overflow-y-auto bg-surface px-gutter-desktop pb-28 pt-4"
+    >
+      {/* `xl:pr-16` keeps the last cards clear of the §6.2 fixed jump rail. */}
+      <div className="flex w-full flex-col xl:pr-16">
         <HeroBanner
           completed={gauge.completed}
           activeLevel={activeLevel}
@@ -870,10 +1150,10 @@ export default function LessonsScreen() {
               search
             </span>
             <input
-              ref={searchRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search lessons"
               placeholder="Search by token, symbol, concept, or language (e.g., pointers, ::, regex, json)..."
               className="w-full rounded-lg bg-surface-container-low py-2 pl-10 pr-space-base font-code-md text-code-md text-on-surface transition-all placeholder:text-on-surface-variant/50 focus:bg-surface-container focus:outline-none focus:ring-1 focus:ring-primary-container"
             />
@@ -888,6 +1168,7 @@ export default function LessonsScreen() {
                   key={filter}
                   type="button"
                   onClick={() => setStatusFilter(filter)}
+                  aria-pressed={statusFilter === filter}
                   className={cn(
                     "rounded px-space-sm py-1 font-label-sm capitalize text-label-sm transition-all",
                     statusFilter === filter
@@ -904,7 +1185,8 @@ export default function LessonsScreen() {
               onChange={(e) =>
                 setLevelFilter(e.target.value === "all" ? "all" : Number(e.target.value))
               }
-              className="rounded-lg bg-surface-container py-2 pl-space-sm pr-space-sm font-label-md text-label-md text-on-surface transition-colors focus:outline-none"
+              aria-label="Filter by level"
+              className="rounded-lg bg-surface-container py-2 pl-space-sm pr-space-sm font-label-md text-label-md text-on-surface transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
             >
               <option value="all">All Levels (1-7)</option>
               {CURRICULUM_LEVELS.map((level) => (
@@ -948,11 +1230,59 @@ export default function LessonsScreen() {
           </div>
         </div>
 
+        {/* §6.3 instant syntax & symbol chip bar — multi-select, OR inside the
+            bar, ANDed with the search/status/level filters above. */}
+        <div className="mb-space-base flex flex-wrap items-center gap-space-xs rounded-xl bg-surface-container-lowest px-space-sm py-space-sm shadow-sm">
+          <span className="flex items-center gap-1.5 pr-space-xs font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
+            <span className="material-symbols-outlined text-[16px]">data_object</span>
+            Syntax
+          </span>
+          {SYMBOL_CHIPS.map((chip) => {
+            const active = symbolChips.has(chip.id);
+            return (
+              <button
+                key={chip.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleChip(chip.id)}
+                className={cn(
+                  "rounded-lg border px-space-sm py-1 font-code-sm text-code-sm transition-all",
+                  active
+                    ? "border-primary-container/60 bg-primary-container font-bold text-on-primary-container shadow-sm"
+                    : "border-surface-container-highest/50 bg-surface-container text-on-surface-variant hover:border-primary-container/40 hover:text-on-surface",
+                )}
+              >
+                {chip.label}
+              </button>
+            );
+          })}
+          {symbolChips.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setSymbolChips(new Set())}
+              className="flex items-center gap-1 rounded-lg px-space-sm py-1 font-code-sm text-code-sm text-on-surface-variant transition-all hover:text-on-surface"
+            >
+              <span className="material-symbols-outlined text-[14px]">close</span>
+              Clear ({symbolChips.size})
+            </button>
+          )}
+        </div>
+
         {/* Level sections */}
         <div className="mb-space-xl flex flex-col gap-space-base">
           {visibleLevels.length === 0 ? (
-            <div className="rounded-xl bg-surface-container-lowest p-space-xl text-center font-code-md text-code-md text-on-surface-variant">
-              No lessons match the current search or filters.
+            <div className="flex flex-col items-center gap-space-base rounded-xl bg-surface-container-lowest p-space-xl text-center font-code-md text-code-md text-on-surface-variant">
+              <span>No lessons match the current search or filters.</span>
+              {searching && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="flex w-fit items-center gap-1 rounded-lg border border-surface-container-highest/50 bg-surface-container px-space-sm py-1 font-code-sm text-code-sm text-on-surface-variant transition-all hover:border-primary-container/40 hover:text-on-surface"
+                >
+                  <span className="material-symbols-outlined text-[14px]">filter_alt_off</span>
+                  Clear filters
+                </button>
+              )}
             </div>
           ) : (
             visibleLevels.map(({ level }) => (
@@ -961,8 +1291,9 @@ export default function LessonsScreen() {
                 level={level}
                 progress={progress}
                 expanded={searching || expandedLevels.has(level.level)}
-                onToggle={() => toggleLevel(level.level)}
+                onToggle={toggleLevel}
                 viewMode={viewMode}
+                sectionRef={sectionRefFor(level.level)}
               />
             ))
           )}
@@ -970,6 +1301,37 @@ export default function LessonsScreen() {
 
         {showTelemetryStrip && <SymbolTelemetry keys={keyStats} />}
       </div>
+
+      {/* §6.2 jump rail — fixed to the right edge, xl and up only. */}
+      <LevelMiniMap entries={miniMapEntries} onJump={jumpToLevel} />
+
+      {/* §6.1 sticky Resume-Frontier HUD (hidden while the DB failed — the
+          error banner already explains why there is no frontier). */}
+      {dbError === null && (
+        <FrontierHud
+          frontier={frontierLabel}
+          mastery={frontierMastery}
+          enabled={milestone === null}
+          left={hudLeft}
+          onResume={resumeFrontier}
+        />
+      )}
+
+      {/* §6.4 level milestone summary. */}
+      {milestone !== null && (
+        <LevelMilestoneModal
+          mastery={summarizeLevel(milestone, progress)}
+          stats={averageLevelStats(milestone, progress)}
+          nextLevel={
+            CURRICULUM_LEVELS.some((level) => level.level === milestone + 1)
+              ? milestone + 1
+              : null
+          }
+          onAdvance={advanceMilestone}
+          onReviewWeakKeys={reviewWeakKeys}
+          onClose={closeMilestone}
+        />
+      )}
     </main>
   );
 }

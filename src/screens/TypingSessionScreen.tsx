@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { lessonsByLevel, getLevelMeta } from "../content";
 import { KeyboardVisualization } from "../components/KeyboardVisualization";
@@ -7,6 +7,8 @@ import { StatusPill } from "../components/StatusPill";
 import { findTargetKey, FINGERS, getActiveLayout } from "../lib/layout";
 import { getCharAccuracy, type CharAccuracy } from "../lib/intelligence/heatmap";
 import { fmt1, fmtClock, moduleNumber } from "../lib/format";
+import { isHeatmapToggle, isInstantReset, isTabResetChord, isZenToggle } from "../lib/session/goldenLoop";
+import { isEditableFocused, releaseChromeFocus } from "../lib/session/focusShield";
 import { WPM_GATE } from "../lib/curriculum/rules";
 import { liveMetrics } from "../lib/engine/metrics";
 import type { SessionState } from "../lib/engine/types";
@@ -26,6 +28,10 @@ import { useUiStore } from "../stores/useUiStore";
  * Sidebar module states (✓ completed / running / next / 🔒 locked) come from
  * the real curriculum + `lesson_progress` rows (Phase 4). The lesson is
  * selected through navigation params; finishing routes to the Results screen.
+ *
+ * Keyboard-first (UX plan §4.1 + Phase 4 §7.3): Tab+Enter / Ctrl+R instant
+ * reset, Esc to curriculum, F / Ctrl+Shift+F Zen Mode and H / Ctrl+Shift+H
+ * for the in-session key-heatmap glance — all behind the §4.1.4 focus shield.
  */
 
 /* ---------------------------------------------------------------------------
@@ -172,17 +178,22 @@ function ModuleSidebar({
   activeLessonId,
   progress,
   onSelect,
+  zen = false,
 }: {
   lesson: Lesson | null;
   activeLessonId: string | null;
   progress: Record<string, import("../lib/schemas").LessonProgress>;
   onSelect: (lesson: Lesson) => void;
+  /** UX plan §4.1.3 — the rail smoothly collapses to zero width in Zen Mode. */
+  zen?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   // Ctrl+B is the documented toggle (kbd hint in the footer) — without this
   // handler a collapsed drawer could never be restored from the keyboard.
+  // §4.1.4: an editable field owns its keystrokes (palette interop).
   useEffect(() => {
     const onToggle = (event: KeyboardEvent) => {
+      if (isEditableFocused()) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
         event.preventDefault();
         setCollapsed((prev) => !prev);
@@ -205,9 +216,15 @@ function ModuleSidebar({
 
   return (
     <aside
+      // Collapsed in Zen Mode: out of the tab order too, so hidden lesson
+      // links can never steal focus from the buffer (§4.1.3).
+      inert={zen}
       className={cn(
-        "flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-surface-container-highest/30 bg-surface-container-low shadow-2xl transition-all duration-300 lg:w-88 xl:w-96",
-        collapsed ? "hidden" : "",
+        "flex shrink-0 flex-col overflow-hidden rounded-xl border border-surface-container-highest/30 bg-surface-container-low shadow-2xl transition-all duration-300",
+        zen
+          ? "pointer-events-none w-0 border-0 opacity-0"
+          : "w-80 opacity-100 lg:w-88 xl:w-96",
+        !zen && collapsed ? "hidden" : "",
       )}
     >
       {/* Track header */}
@@ -325,14 +342,18 @@ interface DisplayLine {
   offset: number;
 }
 
-function CodeBuffer({ lesson, engineState, running, bestWpm }: {
+function CodeBuffer({ lesson, engineState, running, bestWpm, zen = false }: {
   lesson: Lesson | null;
   engineState: SessionState;
   running: boolean;
   /** Personal best for this lesson (0 = none yet) — shown as the target hint. */
   bestWpm: number;
+  /** UX plan §4.1.3 — Zen Mode: no editor chrome, 24px buffer, full viewport. */
+  zen?: boolean;
 }) {
   const activeLineRef = useRef<HTMLDivElement | null>(null);
+  /** UX plan §4.1.4 — faint `·` indent dots + `⏎` newline markers. */
+  const whitespaceGlyphs = useSettingsStore((s) => s.settings.whitespaceGlyphs);
 
   const lines = useMemo<DisplayLine[]>(() => {
     const result: DisplayLine[] = [];
@@ -358,7 +379,8 @@ function CodeBuffer({ lesson, engineState, running, bestWpm }: {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-surface-container-highest/40 bg-surface-container-lowest shadow-2xl">
-      {/* Editor header — lesson title + subtle target hint */}
+      {/* Editor header — lesson title + subtle target hint (hidden in Zen) */}
+      {!zen && (
       <div className="flex shrink-0 items-center justify-between gap-space-sm border-b border-white/5 bg-surface-container-low px-space-base py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="material-symbols-outlined shrink-0 text-[16px] text-primary">description</span>
@@ -379,13 +401,25 @@ function CodeBuffer({ lesson, engineState, running, bestWpm }: {
           </span>
         </div>
       </div>
+      )}
 
       {/* Buffer body */}
-      <div className="relative flex-1 overflow-auto p-space-base font-code-lg text-[20px] leading-[2.5rem] sm:p-space-lg">
+      <div
+        className={cn(
+          "relative min-h-0 flex-1 overflow-auto p-space-base font-code-lg sm:p-space-lg",
+          zen
+            ? "text-[24px] leading-[3rem]"
+            : "text-[20px] leading-[2.5rem]",
+        )}
+      >
         {lines.map((line, lineIndex) => {
           const isActive = lineIndex === activeLine && running;
           const caretAtLineEnd =
             running && engineState.position === line.offset + line.text.length;
+          /** §4.1.4 — how many leading spaces make up this line's indent. */
+          const indentWidth = line.text.length - line.text.trimStart().length;
+          /** The last line has no trailing newline to mark. */
+          const hasNewline = lineIndex < lines.length - 1;
           return (
             <div
               key={lineIndex}
@@ -410,6 +444,9 @@ function CodeBuffer({ lesson, engineState, running, bestWpm }: {
                     const entry = engineState.entries[globalIndex];
                     if (entry === undefined) return null;
                     const isCurrent = running && globalIndex === engineState.position;
+                    /** §4.1.4 — indent dots make the leading run unmistakable. */
+                    const isIndentDot =
+                      whitespaceGlyphs && expected === " " && i < indentWidth;
 
                     const statusClass =
                       entry.status === "correct"
@@ -427,13 +464,17 @@ function CodeBuffer({ lesson, engineState, running, bestWpm }: {
                           className={
                             isCurrent
                               ? "rounded border border-primary-container/50 bg-primary-container/25 px-0.5 text-primary"
-                              : statusClass
+                              : entry.status !== "incorrect" && isIndentDot
+                                ? "text-outline/70"
+                                : statusClass
                           }
                         >
                           {entry.status === "incorrect" && entry.typed !== null
                             ? entry.typed
                             : expected === " "
-                              ? "\u00A0"
+                              ? isIndentDot
+                                ? "\u00B7"
+                                : "\u00A0"
                               : expected}
                         </span>
                       </span>
@@ -442,6 +483,12 @@ function CodeBuffer({ lesson, engineState, running, bestWpm }: {
                 )}
                 {caretAtLineEnd && (
                   <span className="ml-0.5 inline-block h-7 w-2.5 animate-pulse bg-primary-container" />
+                )}
+                {/* §4.1.4 — the newline the caret is parked on, made visible. */}
+                {caretAtLineEnd && hasNewline && whitespaceGlyphs && (
+                  <span className="ml-1 select-none text-[0.8em] leading-none text-outline/70">
+                    ⏎
+                  </span>
                 )}
               </span>
             </div>
@@ -470,6 +517,25 @@ export default function TypingSessionScreen() {
   const sessionParams = useUiStore((s) => s.params["typing-session"]);
   const progress = useCurriculumStore((s) => s.progress);
 
+  // §4.1.3 — Zen / Focus Mode: state lives in `settings.zenMode` so it
+  // survives restarts and is shared with the Settings screen.
+  const zen = useSettingsStore((s) => s.settings.zenMode);
+  // Keyboard-guide display settings — live selectors (same pattern as
+  // `whitespaceGlyphs` in CodeBuffer): reading getState() during render
+  // would never repaint when Settings toggles them.
+  const highlightNextKey = useSettingsStore((s) => s.settings.highlightNextKey);
+  const fingerGuides = useSettingsStore((s) => s.settings.fingerGuides);
+  const toggleZen = useCallback(() => {
+    const { settings, update } = useSettingsStore.getState();
+    update({ zenMode: !settings.zenMode });
+  }, []);
+
+  // §4.1.2 — instant, dialog-free restart of the current buffer.
+  const restart = useCallback(() => {
+    const current = useSessionStore.getState().lesson;
+    if (current !== null) void startLesson(current);
+  }, [startLesson]);
+
   // §14 compact heatmap: data loads once on first toggle (never per
   // keystroke), and the toggle itself never steals keystroke focus.
   const [heatmapVisible, setHeatmapVisible] = useState(false);
@@ -495,11 +561,29 @@ export default function TypingSessionScreen() {
   // ids resolve from the bundled content; `custom-<uuid>` refs load the
   // user's module from the DB (Phase 7 §16).
   const startedFor = useRef<string | null>(null);
+  /**
+   * §4.1.2 — key held while a reset chord fired (Tab+Enter / Ctrl+R): its
+   * auto-repeat is swallowed by the typing feed until the key comes back
+   * up, so a held Enter can never leak newlines into the fresh buffer.
+   */
+  const suppressUntilKeyup = useRef<string | null>(null);
+  useEffect(() => {
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (suppressUntilKeyup.current === event.key) suppressUntilKeyup.current = null;
+    };
+    window.addEventListener("keyup", onKeyUp);
+    return () => window.removeEventListener("keyup", onKeyUp);
+  }, []);
   useEffect(() => {
     const lessonId = sessionParams?.lessonId ?? null;
     if (phase === "idle" && lessonId !== null && startedFor.current !== lessonId) {
+      // The DB read below is async: leaving the screen (Esc/navigate) before
+      // it resolves must not start a zombie session afterwards — its 200 ms
+      // interval and open training_sessions row would outlive the screen.
+      let cancelled = false;
       void resolveTypingLesson(lessonId)
         .then((selected) => {
+          if (cancelled) return;
           if (selected) {
             startedFor.current = lessonId;
             void startLesson(selected);
@@ -509,6 +593,9 @@ export default function TypingSessionScreen() {
           // Deleted custom module / DB failure — "No module loaded" state
           // already renders; just don't leave an unhandled rejection.
         });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [phase, sessionParams, startLesson]);
 
@@ -521,10 +608,13 @@ export default function TypingSessionScreen() {
   }, []);
 
   // Esc backs out to the module list (the abandon above closes the session
-  // row on unmount — same semantics as the Weakness screen's Esc).
+  // row on unmount — same semantics as the Weakness screen's Esc). §4.1.4:
+  // while an editable field owns the keystroke the Esc belongs to it (an
+  // open Command Palette must close, never abandon the session).
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (isEditableFocused()) return;
       event.preventDefault();
       useUiStore.getState().navigate("lessons");
     };
@@ -532,22 +622,85 @@ export default function TypingSessionScreen() {
     return () => window.removeEventListener("keydown", onEscape);
   }, []);
 
+  // §4.1.3 Zen / Focus Mode + §7.3 Heatmap Glance. The chords (Ctrl+Shift+F
+  // / Ctrl+Shift+H) are always available; the bare `F` / `H` are only
+  // claimed while nothing is being typed, because `f` and `h` are ordinary
+  // lesson characters and binding them mid-run would eat input. §4.1.4: an
+  // editable field (palette input) keeps every keystroke.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      if (isEditableFocused()) return;
+      if (isZenToggle(event, phase === "running")) {
+        event.preventDefault();
+        toggleZen();
+        return;
+      }
+      if (isHeatmapToggle(event, phase === "running")) {
+        event.preventDefault();
+        setHeatmapVisible((visible) => !visible);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, toggleZen]);
+
   // Global keydown listener — active only while a session is running.
+  // §4.1.2: Tab+Enter and Ctrl+R restart the buffer with no confirmation
+  // dialog; §4.1.4: a control left focused by a stray click is released
+  // first so window chrome can never swallow Space/Enter.
   useEffect(() => {
     if (phase !== "running") return;
+    /** Timestamp of the last Tab press — armed half of the Tab+Enter chord. */
+    let tabArmedAt = 0;
+
     const onKeyDown = (event: KeyboardEvent) => {
-      // Modifier combos (Ctrl+C, Ctrl+B, ...) pass through untouched.
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.key === "Backspace") {
+      // IME composition: the composing keydown reports the pending key, not
+      // a committed character — it must never reach the buffer.
+      if (event.isComposing || event.keyCode === 229) return;
+      // §4.1.2 — Ctrl+R / Cmd+R restarts the buffer with no confirmation
+      // dialog; every other modifier combo passes through to the shell.
+      // Holding the chord restarts once — a repeat tick must not re-fire it.
+      if (event.ctrlKey || event.metaKey) {
+        if (event.repeat) return;
+        if (isInstantReset(event)) {
+          event.preventDefault();
+          suppressUntilKeyup.current = event.key;
+          restart();
+        }
+        return;
+      }
+      if (event.altKey) return;
+
+      // NOTE: the typing paths below (Tab/Backspace/Enter/characters) MUST
+      // accept `event.repeat` — holding a key or Backspace repeats on purpose.
+      // §4.1.4 focus shield: an editable field keeps its keystrokes; chrome a
+      // stray click left focused is released so it cannot swallow Space/Enter.
+      if (isEditableFocused()) return;
+      releaseChromeFocus();
+      // …except the key that just fired a reset chord: its auto-repeat must
+      // not leak into the buffer the chord just created.
+      if (event.repeat && suppressUntilKeyup.current === event.key) return;
+
+      if (isTabResetChord(event, tabArmedAt, Date.now())) {
+        event.preventDefault();
+        tabArmedAt = 0;
+        suppressUntilKeyup.current = event.key;
+        restart();
+        return;
+      }
+      if (event.key === "Tab") {
+        // Documented choice: Tab inserts a space (content never has tabs)
+        // AND arms the Tab+Enter reset chord.
+        event.preventDefault();
+        tabArmedAt = Date.now();
+        typeChar(" ");
+      } else if (event.key === "Backspace") {
         event.preventDefault();
         backspace();
       } else if (event.key === "Enter") {
         event.preventDefault();
         typeChar("\n");
-      } else if (event.key === "Tab") {
-        // Documented choice: Tab inserts a space (content never has tabs).
-        event.preventDefault();
-        typeChar(" ");
       } else if (event.key.length === 1) {
         event.preventDefault();
         typeChar(event.key);
@@ -555,7 +708,7 @@ export default function TypingSessionScreen() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [phase, typeChar, backspace]);
+  }, [phase, typeChar, backspace, restart]);
 
   const running = phase === "running";
   const metrics = engineState !== null ? liveMetrics(engineState, now) : null;
@@ -572,16 +725,23 @@ export default function TypingSessionScreen() {
   ) ?? "";
 
   return (
-    <main className="flex min-h-0 w-full flex-1 gap-space-sm overflow-hidden bg-surface p-space-sm sm:p-space-base">
+    <main
+      className={cn(
+        "flex min-h-0 w-full flex-1 overflow-hidden bg-surface",
+        zen ? "gap-0 p-0" : "gap-space-sm p-space-sm sm:p-space-base",
+      )}
+    >
       <ModuleSidebar
         lesson={lesson}
         activeLessonId={lesson?.id ?? null}
         progress={progress}
         onSelect={(selected) => void startLesson(selected)}
+        zen={zen}
       />
 
       <section className="relative flex h-full min-w-0 flex-1 flex-col gap-space-sm overflow-hidden">
-        {/* Telemetry & controls */}
+        {/* Telemetry & controls — replaced by the faint Zen HUD in Focus Mode */}
+        {!zen && (
         <div className="flex shrink-0 flex-col gap-space-sm rounded-xl border border-surface-container-highest/30 bg-surface-container-low p-space-sm shadow-md sm:p-space-base">
           <div className="flex flex-wrap items-center justify-between gap-space-sm">
             <div className="flex flex-wrap items-center gap-space-md sm:gap-space-lg">
@@ -623,29 +783,27 @@ export default function TypingSessionScreen() {
                 type="button"
                 onClick={() => lesson && void startLesson(lesson)}
                 className="flex items-center gap-1 rounded-lg border border-surface-container-highest/40 bg-surface-container px-3 py-1.5 font-label-md text-label-md text-on-surface transition-colors hover:bg-surface-container-high"
-                title="Restart lesson"
+                title="Restart lesson (Tab then Enter, or Ctrl+R)"
               >
                 <span className="material-symbols-outlined text-[16px]">refresh</span>
                 <span>Reset</span>
+                <kbd className="hidden rounded border border-white/10 bg-surface-container-low px-1.5 py-0.5 text-[10px] text-on-surface-variant md:inline">
+                  Ctrl+R
+                </kbd>
+              </button>
+              {/* §4.1.3 — compact Zen Mode toggle (keyboard: Ctrl+Shift+F). */}
+              <button
+                type="button"
+                onClick={toggleZen}
+                aria-pressed={zen}
+                className="flex items-center gap-1 rounded-lg border border-surface-container-highest/40 bg-surface-container px-3 py-1.5 font-label-md text-label-md text-on-surface transition-colors hover:bg-surface-container-high"
+                title="Zen / Focus Mode (Ctrl+Shift+F)"
+              >
+                <span className="material-symbols-outlined text-[16px]">fullscreen</span>
+                <span>Zen</span>
               </button>
             </div>
           </div>
-
-          {persistError !== null && (
-            <div className="flex items-center justify-between gap-2 rounded border border-error/40 bg-error-container/40 px-space-sm py-1 font-code-sm text-code-sm text-error">
-              <span className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[14px]">error</span>
-                Save failed: {persistError}
-              </span>
-              <button
-                type="button"
-                onClick={() => void retryPersist()}
-                className="rounded bg-surface-container px-2 py-0.5 font-bold text-on-surface hover:bg-surface-container-high"
-              >
-                Retry save
-              </button>
-            </div>
-          )}
 
           {/* Progress bar */}
           <div className="flex flex-col gap-1">
@@ -665,6 +823,57 @@ export default function TypingSessionScreen() {
             </div>
           </div>
         </div>
+        )}
+
+        {/* Save-failure banner — stays visible in Zen Mode too. */}
+        {persistError !== null && (
+          <div className="flex shrink-0 items-center justify-between gap-2 rounded border border-error/40 bg-error-container/40 px-space-sm py-1 font-code-sm text-code-sm text-error">
+            <span className="flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px]">error</span>
+              Save failed: {persistError}
+            </span>
+            <button
+              type="button"
+              onClick={() => void retryPersist()}
+              className="rounded bg-surface-container px-2 py-0.5 font-bold text-on-surface hover:bg-surface-container-high"
+            >
+              Retry save
+            </button>
+          </div>
+        )}
+
+        {/* §4.1.3 — minimalist floating HUD: faint WPM / Accuracy / Progress. */}
+        {zen && (
+          <div className="flex shrink-0 flex-wrap items-center justify-center gap-space-md border border-white/5 bg-surface-container-low/70 px-space-md py-1.5 font-label-sm text-label-sm text-on-surface-variant opacity-80 sm:gap-space-lg">
+            <span className="flex items-baseline gap-1.5">
+              <strong className="font-mono text-[15px] font-bold text-primary">
+                {metrics ? fmt1(metrics.wpm) : "0.0"}
+              </strong>
+              <span className="tracking-widest">WPM</span>
+            </span>
+            <span className="flex items-baseline gap-1.5">
+              <strong className="font-mono text-[15px] font-bold text-on-surface">
+                {metrics ? fmt1(metrics.accuracy) : "100.0"}
+              </strong>
+              <span className="tracking-widest">ACC %</span>
+            </span>
+            <span className="h-1.5 w-32 overflow-hidden rounded-full bg-surface-container-highest/70">
+              <span
+                className="block h-full rounded-full bg-primary transition-all duration-300"
+                style={{ width: `${metrics ? Math.min(100, metrics.progressPct) : 0}%` }}
+              />
+            </span>
+            <span className="tracking-widest">
+              {metrics ? Math.round(metrics.progressPct) : 0}%
+            </span>
+            <span className="hidden items-center gap-1 text-outline sm:flex">
+              <kbd className="rounded border border-white/10 bg-surface-container-lowest px-1.5 py-0.5 text-[10px]">
+                Ctrl+Shift+F
+              </kbd>
+              <span>exit Zen</span>
+            </span>
+          </div>
+        )}
 
         {/* Code buffer */}
         {engineState !== null ? (
@@ -673,6 +882,7 @@ export default function TypingSessionScreen() {
             engineState={engineState}
             running={running}
             bestWpm={lesson ? progress[lesson.id]?.bestWpm ?? 0 : 0}
+            zen={zen}
           />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-surface-container-highest/40 bg-surface-container-lowest shadow-2xl">
@@ -687,67 +897,76 @@ export default function TypingSessionScreen() {
           </div>
         )}
 
-        {/* Keyboard visualization + status strip */}
-        <div className="flex shrink-0 select-none flex-col gap-2 rounded-xl border border-surface-container-highest/40 bg-surface-container-low/95 p-3 shadow-inner">
-          <div className="flex flex-wrap items-center justify-between gap-2 px-1 font-label-sm text-label-sm">
-            <span className="flex items-center gap-2 font-semibold text-primary">
-              <span className="material-symbols-outlined text-[16px] text-primary-container">keyboard</span>
-              <span>Keyboard Guide</span>
-            </span>
-            <span className="flex flex-wrap items-center gap-2 text-on-surface-variant">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-primary-container" />
-                <span>
-                  Next key:{" "}
-                  {Array.from(upcoming).map((char, i) => (
-                    <strong key={i} className="font-mono text-primary">
-                      [{char === "\n" ? "\\n" : char}]
-                      {i < upcoming.length - 1 ? " " : ""}
-                    </strong>
-                  ))}
-                </span>
+        {/* Keyboard visualization + status strip — §4.1.3: in Zen Mode it
+            collapses smoothly to zero height instead of vanishing. */}
+        <div
+          inert={zen}
+          className={cn(
+            "grid shrink-0 transition-all duration-300 ease-out",
+            zen ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
+          )}
+        >
+          <div className="flex min-h-0 select-none flex-col gap-2 overflow-hidden rounded-xl border border-surface-container-highest/40 bg-surface-container-low/95 p-3 shadow-inner">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1 font-label-sm text-label-sm">
+              <span className="flex items-center gap-2 font-semibold text-primary">
+                <span className="material-symbols-outlined text-[16px] text-primary-container">keyboard</span>
+                <span>Keyboard Guide</span>
               </span>
-              {nextFinger !== null && (
-                <span className="hidden items-center gap-1 text-outline sm:flex">
-                  <span className="material-symbols-outlined text-[14px] text-primary">pan_tool</span>
+              <span className="flex flex-wrap items-center gap-2 text-on-surface-variant">
+                <span className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-primary-container" />
                   <span>
-                    {nextFinger.label}
-                    {nextTarget?.requiresShift === true ? " + Shift" : ""}
+                    Next key:{" "}
+                    {Array.from(upcoming).map((char, i) => (
+                      <strong key={i} className="font-mono text-primary">
+                        [{char === "\n" ? "\\n" : char}]
+                        {i < upcoming.length - 1 ? " " : ""}
+                      </strong>
+                    ))}
                   </span>
                 </span>
-              )}
-              {/* §14 compact heatmap toggle — weak keys during practice. */}
-              <button
-                type="button"
-                onClick={() => setHeatmapVisible((v) => !v)}
-                aria-pressed={heatmapVisible}
-                aria-label="Toggle 30-day key accuracy heatmap"
-                className={cn(
-                  "ml-3 flex items-center gap-1 rounded border px-2 py-0.5 transition-colors",
-                  heatmapVisible
-                    ? "border-primary-container/50 bg-primary-container/20 font-bold text-primary"
-                    : "border-surface-container-highest/60 bg-surface-container-lowest text-outline hover:text-on-surface",
+                {nextFinger !== null && (
+                  <span className="hidden items-center gap-1 text-outline sm:flex">
+                    <span className="material-symbols-outlined text-[14px] text-primary">pan_tool</span>
+                    <span>
+                      {nextFinger.label}
+                      {nextTarget?.requiresShift === true ? " + Shift" : ""}
+                    </span>
+                  </span>
                 )}
-                title="Toggle key heatmap (30-day accuracy)"
-              >
-                <span className="material-symbols-outlined text-[12px]">grid_on</span>
-                <span>Heatmap</span>
-              </button>
-            </span>
-          </div>
-          {heatmapVisible && (
-            <div className="rounded-lg border border-surface-container-highest/30 bg-surface-container-lowest/60 p-2">
-              <p className="mb-1 text-center font-label-sm text-label-sm text-outline">
-                Key heatmap: 30-day accuracy (weak keys highlighted)
-              </p>
-              <KeyHeatmapCompact data={heatmapData} />
+                {/* §14 compact heatmap toggle — weak keys during practice. */}
+                <button
+                  type="button"
+                  onClick={() => setHeatmapVisible((v) => !v)}
+                  aria-pressed={heatmapVisible}
+                  aria-label="Toggle 30-day key accuracy heatmap"
+                  className={cn(
+                    "ml-3 flex items-center gap-1 rounded border px-2 py-0.5 transition-colors",
+                    heatmapVisible
+                      ? "border-primary-container/50 bg-primary-container/20 font-bold text-primary"
+                      : "border-surface-container-highest/60 bg-surface-container-lowest text-outline hover:text-on-surface",
+                  )}
+                  title="Toggle key heatmap (H outside a run, Ctrl+Shift+H anytime)"
+                >
+                  <span className="material-symbols-outlined text-[12px]">grid_on</span>
+                  <span>Heatmap</span>
+                </button>
+              </span>
             </div>
-          )}
-          <KeyboardVisualization
-            nextChar={nextCharValue}
-            highlightNextKey={useSettingsStore.getState().settings.highlightNextKey}
-            fingerGuides={useSettingsStore.getState().settings.fingerGuides}
-          />
+            {heatmapVisible && (
+              <div className="rounded-lg border border-surface-container-highest/30 bg-surface-container-lowest/60 p-2">
+                <p className="mb-1 text-center font-label-sm text-label-sm text-outline">
+                  Key heatmap: 30-day accuracy (weak keys highlighted)
+                </p>
+                <KeyHeatmapCompact data={heatmapData} />
+              </div>
+            )}
+            <KeyboardVisualization
+              nextChar={nextCharValue}
+              highlightNextKey={highlightNextKey}
+              fingerGuides={fingerGuides}
+            />
+          </div>
         </div>
 
         {/* Session finished overlay (minimal inline summary — full Results

@@ -14,11 +14,7 @@ import { StatusPill } from "../components/StatusPill";
 import { ACCURACY_GATE, WPM_GATE } from "../lib/curriculum/rules";
 import { seedCurriculum } from "../lib/curriculum/seed";
 import { statsRepo } from "../lib/db/repositories";
-import {
-  backupFilename,
-  collectBackup,
-  serializeEnvelope,
-} from "../lib/io/exporter";
+import { exportBackupJson, EXPORT_UNSUPPORTED_MESSAGE } from "../lib/io/backupExport";
 import type { ExportEnvelope } from "../lib/io/exportSchema";
 import {
   applyEnvelope,
@@ -29,10 +25,11 @@ import {
 } from "../lib/io/importer";
 import {
   checkForUpdates,
+  inTauri,
   readTextFileViaDialog,
   resetDatabase,
-  saveTextFile,
 } from "../lib/io/fileIo";
+import { THEMES } from "../lib/themeCatalog";
 import { useSettingsStore, type ThemeId } from "../stores/useSettingsStore";
 import { useDailyGoalsStore } from "../stores/useDailyGoalsStore";
 import { cn } from "../lib/cn";
@@ -59,12 +56,6 @@ const NAV: { id: SectionId; label: string; icon: string }[] = [
   { id: "statistics", label: "Statistics", icon: "monitoring" },
   { id: "data", label: "Data Management", icon: "database" },
   { id: "application", label: "Application", icon: "app_settings_alt" },
-];
-
-const THEMES: { id: ThemeId; label: string }[] = [
-  { id: "typekernel-dark", label: "TypeKernel Dark" },
-  { id: "terminal-mono", label: "Terminal Mono" },
-  { id: "high-contrast", label: "High Contrast" },
 ];
 
 export default function SettingsScreen() {
@@ -98,14 +89,22 @@ export default function SettingsScreen() {
   /* ------------------------------- data actions --------------------------- */
 
   const exportBackup = async () => {
+    // §5.2.4 — the flow itself lives in `lib/io/backupExport` so the command
+    // palette runs the identical one; messaging stays here (observable
+    // behavior unchanged: cancel is silent, failures land in the report).
+    if (!inTauri()) {
+      // Browser dev: no native save dialog, so `saveTextFile` would degrade
+      // to the same null as a cancel — report it instead of no-opping.
+      setImportState({
+        phase: "error",
+        title: "Export unavailable",
+        issues: [EXPORT_UNSUPPORTED_MESSAGE],
+      });
+      return;
+    }
     try {
-      const envelope = await collectBackup();
-      const path = await saveTextFile(
-        backupFilename("progress-backup"),
-        serializeEnvelope(envelope),
-      );
+      const path = await exportBackupJson();
       if (path !== null) {
-        update({ lastBackupAt: Date.now() });
         setImportState({
           phase: "success",
           message: `Backup written to ${path}`,
@@ -200,7 +199,12 @@ export default function SettingsScreen() {
 
   const goToSection = (id: SectionId) => {
     setActiveSection(id);
-    document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Honour `prefers-reduced-motion` (same contract as LessonsScreen's
+    // level jump) instead of always animating the scroll.
+    const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth";
+    document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior, block: "start" });
   };
 
   /* --------------------------------- render -------------------------------- */
@@ -352,11 +356,37 @@ export default function SettingsScreen() {
                   disabledValues={["fira-code", "cascadia-code"]}
                 />
               </SettingRow>
+              <SettingRow
+                label="Tab size"
+                description="Spaces written for each tab when pasting code into a custom lesson."
+              >
+                <PillGroup<"2" | "4">
+                  label="Tab size"
+                  value={settings.tabSize === 2 ? "2" : "4"}
+                  onChange={(tabSize) => update({ tabSize: Number(tabSize) as 2 | 4 })}
+                  options={[
+                    { id: "2", label: "2 spaces" },
+                    { id: "4", label: "4 spaces" },
+                  ]}
+                />
+              </SettingRow>
               <ToggleRow
                 label="Reduce motion"
                 description="Disables pulses, glow animation and cursor blink."
                 checked={settings.reduceMotion}
                 onChange={(reduceMotion) => update({ reduceMotion })}
+              />
+              <ToggleRow
+                label="Zen / Focus Mode"
+                description="Expands the code buffer to the full viewport and collapses the sidebar and keyboard. Toggled live with Ctrl+Shift+F."
+                checked={settings.zenMode}
+                onChange={(zenMode) => update({ zenMode })}
+              />
+              <ToggleRow
+                label="Whitespace glyphs"
+                description="Faint · indent dots and ⏎ newline markers inside the typing buffer."
+                checked={settings.whitespaceGlyphs}
+                onChange={(whitespaceGlyphs) => update({ whitespaceGlyphs })}
               />
             </SectionCard>
           </div>

@@ -279,6 +279,28 @@
   --text-label-sm--line-height: 14px;
   --text-label-sm--letter-spacing: 0.06em;
   --text-label-sm--font-weight: 600;
+
+  /* Motion — UX plan §6.2 screen transition. Deliberately OPACITY-ONLY:
+   * a `transform` on the keyed wrapper would make it the containing block
+   * for the screens' fixed chrome (FrontierHud's measured `left`, the
+   * LevelMiniMap's `top-1/2`), which would jump ~20px the moment the
+   * animation ends — the exact jitter §6.2 exists to remove. Opacity does
+   * not establish a containing block, so fixed elements stay viewport-
+   * anchored for the whole transition. The keyframes below keep the
+   * element's resting state visible: reduce-motion turns the animation off
+   * entirely (see the `animation: none` override) and there is no base
+   * `opacity: 0` class, so the screen simply renders normally. */
+  --animate-screen-in: screen-in 150ms ease-out;
+}
+
+/* §6.2 — 150ms ease-out fade on every screen swap. */
+@keyframes screen-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ---------------------------------------------------------------------------

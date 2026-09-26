@@ -11,6 +11,7 @@ import { StatusPill } from "../components/StatusPill";
 import { useCustomLessonsStore } from "../stores/useCustomLessonsStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
 import { detectTargets, toCurriculumLesson } from "../lib/customLessons/domain";
+import { detabify } from "../lib/customLessons/detabify";
 import { z } from "zod";
 import {
   buildCollectionEnvelope,
@@ -89,6 +90,9 @@ const EMPTY_FORM: FormState = {
 
 /** Placeholder id used for live schema validation of unsaved modules. */
 const DRAFT_ID = "00000000-0000-4000-8000-000000000000";
+
+/** §6.1 how long the "Converted N tabs to spaces" badge stays on screen. */
+const TAB_NOTICE_MS = 3000;
 
 function formToModule(form: FormState, now = Date.now()): CustomLesson {
   return CustomLessonSchema.parse({
@@ -374,6 +378,7 @@ export default function CustomLessonsScreen() {
   const { lessons, stats, loaded, error, load, create, update, remove } =
     useCustomLessonsStore();
   const lastBackupAt = useSettingsStore((s) => s.settings.lastBackupAt);
+  const tabSize = useSettingsStore((s) => s.settings.tabSize);
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterId>("all");
@@ -388,11 +393,39 @@ export default function CustomLessonsScreen() {
     | { phase: "success"; message: string }
   >({ phase: "idle" });
   const formScrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLTextAreaElement | null>(null);
+  /* --------------------------- §6.1 detabifier --------------------------- */
+  const [tabNotice, setTabNotice] = useState<number | null>(null);
+  const tabNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Caret to restore after a converted paste (see the effect below). */
+  const pendingCaret = useRef<number | null>(null);
+  const [pasteSeq, setPasteSeq] = useState(0);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  // The badge self-clears; the timer is reset on every converted paste and
+  // torn down on unmount (the `useFormValidation` setTimeout idiom).
+  useEffect(
+    () => () => {
+      if (tabNoticeTimer.current !== null) clearTimeout(tabNoticeTimer.current);
+    },
+    [],
+  );
+
+  // §6.1 caret restore: the controlled textarea commits its new value (and
+  // React restores the pre-paste selection) before effects run, so the caret
+  // is placed one frame later at the end of the inserted text.
+  useEffect(() => {
+    if (pendingCaret.current === null) return;
+    const position = pendingCaret.current;
+    pendingCaret.current = null;
+    const frame = requestAnimationFrame(() => {
+      contentRef.current?.setSelectionRange(position, position);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pasteSeq, form.content]);
 
   // Auto-detection re-runs ONLY while the user has not hand-edited the
   // chips (plan §2). A manual edit flips `manualTargets` and detection stops.
@@ -416,6 +449,22 @@ export default function CustomLessonsScreen() {
   const validation = useFormValidation(form);
 
   const patch = (next: Partial<FormState>) => setForm((current) => ({ ...current, ...next }));
+
+  /** §6.1 primary paste path — tabs are converted BEFORE the value lands, so
+   *  the schema's "tabs are not supported" refine can never fire. */
+  const onTabPaste = (clipboard: string, start: number, end: number) => {
+    const converted = detabify(clipboard, tabSize);
+    const next = `${form.content.slice(0, start)}${converted.text}${form.content.slice(end)}`;
+    pendingCaret.current = start + converted.text.length;
+    patch({ content: next });
+    setPasteSeq((seq) => seq + 1);
+    setTabNotice(converted.tabsConverted);
+    if (tabNoticeTimer.current !== null) clearTimeout(tabNoticeTimer.current);
+    tabNoticeTimer.current = setTimeout(() => {
+      tabNoticeTimer.current = null;
+      setTabNotice(null);
+    }, TAB_NOTICE_MS);
+  };
 
   const removeChip = (char: string) => {
     patch({
@@ -847,15 +896,37 @@ export default function CustomLessonsScreen() {
 
             <Field label="Content" required>
               <textarea
+                ref={contentRef}
                 rows={5}
                 value={form.content}
-                onChange={(event) => patch({ content: event.target.value })}
+                onChange={(event) => {
+                  const content = event.target.value;
+                  // §6.1 safety net: drag-drop, IME and programmatic writes can
+                  // still inject tabs — convert silently (no badge) so the
+                  // schema refine never fires from this editor.
+                  patch({
+                    content: content.includes("\t") ? detabify(content, tabSize).text : content,
+                  });
+                }}
+                onPaste={(event) => {
+                  const clipboard = event.clipboardData.getData("text/plain");
+                  if (!clipboard.includes("\t")) return; // tab-free paste stays native
+                  event.preventDefault();
+                  onTabPaste(clipboard, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
+                }}
                 spellCheck={false}
                 className="w-full resize-none rounded-lg border border-surface-container-highest/50 bg-surface-container-lowest px-space-sm py-2 font-code-md leading-relaxed text-code-md text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-container"
               />
-              <div className="mt-1 flex items-center justify-between font-code-sm text-code-sm">
-                <span className="text-on-surface-variant">
-                  {form.content.length} characters • {form.content.split("\n").length} lines
+              <div className="mt-1 flex items-center justify-between gap-space-sm font-code-sm text-code-sm">
+                <span className="flex min-w-0 items-center gap-space-xs text-on-surface-variant">
+                  <span className="truncate">
+                    {form.content.length} characters • {form.content.split("\n").length} lines
+                  </span>
+                  {tabNotice !== null && (
+                    <span className="shrink-0 rounded-full bg-surface-container-high px-2 text-primary">
+                      Converted {tabNotice} tab{tabNotice === 1 ? "" : "s"} to spaces
+                    </span>
+                  )}
                 </span>
                 <span className={validation.valid ? "text-primary" : "text-outline"}>
                   {[...new Set(Array.from(form.content))].filter(

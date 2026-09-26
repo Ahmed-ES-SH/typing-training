@@ -22,6 +22,7 @@ Unlike conventional touch-typing tutors that train on prose or literature, TypeK
 3. **Immutable History:** Attempt metrics are append-only. The app never overwrites historical attempt metrics with "best scores".
 4. **Deterministic Progression:** 260 curated lessons across 7 progressive levels. Unlocking requires passing both speed and accuracy thresholds simultaneously in a single attempt.
 5. **Adaptive Intelligence:** Automatic tracking of per-key accuracy, latency, and bigram error rates, feeding visual heatmaps and dynamic weakness drill generators.
+6. **Keyboard-First Workflow:** Every screen action is reachable from the home row — global `Ctrl+K` palette, `Alt+1..6` / vim `g …` screen jumps, Smart Enter on Results, Zen mode, and 1-click micro-drills (UX plan Phases 1–6, shipped 2026-09-26).
 
 ---
 
@@ -60,9 +61,12 @@ typing-trainer/
 ├── packaging/                   # Packaging scripts and metadata
 │   ├── arch/                    # Arch Linux PKGBUILD and desktop integration files
 │   └── aur/                     # AUR submission checklist and template
-├── plans/                       # Phase-by-phase implementation plans (Phase 1 to 9)
-│   ├── MAIN_PLAN.md             # Master roadmap
+├── plans/                       # Implementation plans & status tracking
+│   ├── MAIN_PLAN.md             # Master roadmap (Phases 1–9)
 │   ├── PHASE_2_PLAN.md .. PHASE_9_PLAN.md
+│   ├── UX_PERFECTION_WORKFLOW_PLAN.md  # Full-app UX workflow redesign — Phases 1–6 ✅ done (2026-09-26)
+│   ├── GAMIFICATION_AND_POLISH_PLAN.md # Audio/particles/game-feel (complementary, unstarted)
+│   └── SIMPLIFY_DESIGN_SYSTEM_PLAN.md  # Design-system simplification
 ├── public/                      # Static assets bundled with the app (fonts, icons)
 ├── screens/                     # Reference UI designs & HTML mockups for all 8 screens
 │   ├── all_lessons_typekernel/
@@ -77,19 +81,26 @@ typing-trainer/
 │   └── perf-budget.mjs          # Automated build & bundle size budget auditor
 ├── src/                         # React / TypeScript Application Source
 │   ├── components/              # Shared UI components
+│   │   ├── CommandPalette.tsx   # Ctrl+K omnibar: lesson search, screen jumps, actions
 │   │   ├── ConsistencyStrip.tsx # 14-day / 90-day activity consistency heatmap strip
 │   │   ├── FormPrimitives.tsx   # Custom inputs, toggles, textareas, buttons
+│   │   ├── FrontierHud.tsx      # Sticky "Resume Frontier" bottom bar on Lessons
+│   │   ├── GlobalHotkeys.tsx    # Mounts once in App.tsx: all global chords + palette/sheet overlays
+│   │   ├── GoalRing.tsx         # Daily-goal radial rings: rAF mount sweep + met glow/check (§5.3)
 │   │   ├── KeyHeatmap.tsx       # Full interactive QWERTY visual heatmap
-│   │   ├── KeyHeatmapCompact.tsx# Condensed heatmap widget
+│   │   ├── KeyHeatmapCompact.tsx# Condensed heatmap widget (in-session glance)
 │   │   ├── KeyboardVisualization.tsx # Live interactive virtual keyboard during sessions
+│   │   ├── LevelMilestoneModal.tsx # "Level N Mastered" celebration card
+│   │   ├── LevelMiniMap.tsx     # Right-side level jump rail (L1..L7)
 │   │   ├── MasteryGauge.tsx     # Radial circular progress gauge
-│   │   ├── Modal.tsx            # Accessible modal dialogue overlay
+│   │   ├── Modal.tsx            # Accessible modal shell: focus trap, Esc, stacked-overlay ownership
 │   │   ├── NavSidebar.tsx       # Collapsible navigation sidebar
 │   │   ├── Shell.tsx            # Main application layout wrapper
+│   │   ├── ShortcutsModal.tsx   # `?` keyboard cheat-sheet dialog
 │   │   ├── Sparkline.tsx        # Inline mini trend SVG
 │   │   ├── SparklineChart.tsx   # Recharts-based telemetry chart
 │   │   ├── StatCard.tsx         # Standardized KPI summary card
-│   │   └── TopBar.tsx           # Status bar with offline badge, WPM meter, screen title
+│   │   └── TopBar.tsx           # Status bar + macOS traffic dots (real Tauri window controls) + Ctrl+K hint
 │   ├── content/                 # 260-Lesson Curriculum & Level Generators
 │   │   ├── levels/              # Individual level generators
 │   │   │   ├── level1.ts        # L1: Fundamentals (Home, Top, Bottom rows)
@@ -106,10 +117,12 @@ typing-trainer/
 │   ├── lib/                     # Core Business Logic, Engine, DB, and Utilities
 │   │   ├── cn.ts                # Class name merging utility (clsx / tailwind-merge)
 │   │   ├── curriculum/          # Progression rules, unlock evaluator, and DB seeding
+│   │   │   ├── frontierNav.ts   # Level mastery, symbol chips, milestone acks (frontierNav.test.ts)
 │   │   │   ├── progressService.ts # Lesson progress tracking and unlock pipeline
 │   │   │   ├── rules.ts         # Unlock gate validation rules (Acc >= 95 & WPM > 45)
 │   │   │   └── seed.ts          # Database seed script for built-in lessons
 │   │   ├── customLessons/       # Custom user lesson domain logic
+│   │   │   ├── detabify.ts      # §6.1 pure tab→spaces paste conversion (detabify.test.ts)
 │   │   │   └── domain.ts        # Auto-detection of target keys, symbols, and difficulty
 │   │   ├── db/                  # SQLite Database Client & Repositories
 │   │   │   ├── client.ts        # Tauri SQL plugin client wrapper & migration runner
@@ -120,29 +133,39 @@ typing-trainer/
 │   │   │   ├── engine.ts        # Session reducer, character evaluation, event fold
 │   │   │   ├── metrics.ts       # Pure metric selectors (WPM, Accuracy, Error Rate)
 │   │   │   └── types.ts         # Engine state interfaces, event types, session options
+│   │   ├── hotkeys/             # Global hotkey decision engine
+│   │   │   └── globalHotkeys.ts # Pure `globalHotkeyDecision` (Alt+1..6, g-chords, /, ?, Ctrl+K)
+│   │   │                        #   + palette scoring/ranking (globalHotkeys.test.ts)
 │   │   ├── intelligence/        # Adaptive Learning & Weakness Engine
 │   │   │   ├── adaptiveGenerator.ts # Generates text injected with user's weak keys
 │   │   │   ├── analyzer.ts      # Statistical analyzer over key attempts & rollups
 │   │   │   ├── drillService.ts  # Dynamic evolving weakness drill generator
-│   │   │   └── heatmap.ts       # Heatmap color scale calculator
+│   │   │   ├── heatmap.ts       # Heatmap color scale calculator
+│   │   │   └── microDrill.ts    # 45s Results micro-drill plan builder (microDrill.test.ts)
 │   │   ├── io/                  # Import, Export & Backup Subsystem
+│   │   │   ├── backupExport.ts  # One-call JSON backup export (+ lastBackupAt stamp)
 │   │   │   ├── exporter.ts      # JSON & CSV serialization (lessons, backups, logs)
 │   │   │   ├── exportSchema.ts  # Zod schema contracts for import/export JSON files
-│   │   │   ├── fileIo.ts        # Tauri native file dialog and disk read/write
+│   │   │   ├── fileIo.ts        # Tauri native file dialog and disk read/write (`inTauri()` guard)
 │   │   │   └── importer.ts      # Validated deserialization & database restoration
 │   │   ├── layout/              # Layout-Agnostic Keyboard Definitions
 │   │   │   ├── fingers.ts       # Finger assignment mapping
 │   │   │   ├── keymap.ts        # Key mapping abstractions and types
 │   │   │   └── qwerty.ts        # Physical QWERTY key matrix definition
+│   │   ├── session/             # Session workflow logic (golden loop & focus shield)
+│   │   │   ├── goldenLoop.ts    # Results key routing: Smart-Enter, Tab+Enter reset, Zen/H toggles
+│   │   │   └── focusShield.ts   # `isEditableFocused()` / `releaseChromeFocus()` keyboard guards
 │   │   ├── stats/               # Aggregation & Rollup Services
 │   │   │   ├── dailyGoalsRepo.ts# Daily goal persistence
+│   │   │   ├── dailyRoutine.ts  # Daily-routine derivation, Enter dispatch, streak copy (§5.1/§5.2)
 │   │   │   ├── dailyService.ts  # Daily progress, streaks, and consistency computation
 │   │   │   ├── format.ts        # Time, date, and metric formatting helpers
 │   │   │   ├── progressService.ts # Overall curriculum statistics aggregation
 │   │   │   └── weaknessService.ts # Weakness summary service
 │   │   ├── format.ts            # Global formatting utilities
 │   │   ├── schemas.ts           # Zod domain schemas (Single source of truth)
-│   │   └── screens.ts           # Screen IDs and routing definitions
+│   │   ├── screens.ts           # Screen IDs and routing definitions
+│   │   └── themeCatalog.ts      # Theme switcher catalog (cycle via palette / settings)
 │   ├── screens/                 # 8 Application Screens
 │   │   ├── CustomLessonsScreen.tsx   # Custom lesson creator, editor, and catalog
 │   │   ├── DashboardScreen.tsx       # Main dashboard: KPIs, continue card, streak, heatmaps
@@ -165,7 +188,8 @@ typing-trainer/
 │   └── styles.css               # Tailwind CSS imports and custom token directives
 ├── src-tauri/                   # Rust Backend & Tauri Configuration
 │   ├── capabilities/            # Tauri v2 security capabilities
-│   │   └── default.json         # Scoped permissions for fs, dialog, sql, opener
+│   │   └── default.json         # Scoped permissions: fs, dialog, sql, opener,
+│   │                            #   core:window (traffic dots), fs:allow-write-text-file (backup export)
 │   ├── migrations/              # Versioned SQL migrations generated by drizzle-kit
 │   │   ├── 0000_previous_pestilence.sql # Initial 8 PRD tables
 │   │   ├── 0001_gorgeous_ben_grimm.sql  # Attempt key spotlight column
@@ -183,6 +207,10 @@ typing-trainer/
 ├── vite.config.ts               # Vite bundler configuration
 └── vitest.config.ts             # Vitest test configuration
 ```
+
+> **Note:** unit tests live next to their sources as `*.test.ts` (vitest, **node environment** —
+> there is no jsdom/Testing-Library harness, so DOM wiring in components is verified by
+> type-checking and manual runs, not by tests).
 
 ---
 
@@ -384,6 +412,28 @@ $$\text{Accuracy} \ge 95\% \quad \text{AND} \quad \text{WPM} > 45$$
 - Automated streak calculation based on daily active training.
 - Streak preservation: streaks survive single-goal misses as long as daily training activity is registered.
 
+### 5.6 Keyboard-First UX Layer (`src/lib/hotkeys/`, `src/lib/session/`, `src/lib/curriculum/frontierNav.ts`)
+
+Implements `plans/UX_PERFECTION_WORKFLOW_PLAN.md` (Phases 1–4 shipped 2026-09-26):
+
+- **Global hotkeys (`src/lib/hotkeys/globalHotkeys.ts` + `GlobalHotkeys.tsx`):** a *pure decision function* `globalHotkeyDecision(context, event)` maps key events to actions — `Ctrl/Cmd+K` palette, `Alt+1..6` screen jumps, `g d`/`g l`/`g w`/`g s`/`g c`/`g ,` vim chords (1 s window), `/`, `?`. `GlobalHotkeys.tsx` mounts **once, last, in `App.tsx`**, registers a window **capture-phase** listener, and `stopImmediatePropagation`s chords it consumes so screen-level bubble listeners never double-fire. Bare-letter bindings return `noAction` while a session is running or an editable field is focused.
+- **Command palette (`CommandPalette.tsx`):** AND-token scorer + stable ranking (`paletteScore`/`rankPalette`) over lessons (title, `L3-014` module codes, tags, target keys) and app actions (screen jumps, toggles, export, drills). Focus is captured/restored; a successfully-run entry deliberately skips restore so the opener button can't swallow Results/Dashboard Enter.
+- **Golden loop (`src/lib/session/goldenLoop.ts`):** `resultsActionFor(key, ctx)` decides Results Enter/Space (`next-lesson` / `retry-lesson`), plus `isTabResetChord` (Tab+Enter, 1.5 s window), `isInstantReset` (Ctrl+R), `isZenToggle` (bare `F` idle / `Ctrl+Shift+F` running), `isHeatmapToggle` (`H` idle / `Ctrl+Shift+H` running).
+- **Focus shield (`src/lib/session/focusShield.ts`):** `isEditableFocused()` (inputs/textarea/select/contenteditable) gates every screen-level Enter/Space/letter handler so keystrokes are never hijacked from a focused control; `releaseChromeFocus()` blurs stray chrome focus.
+- **Frontier navigation (`src/lib/curriculum/frontierNav.ts`):** pure level-mastery summaries, `SYMBOL_CHIPS` (brackets/parens/arrows/SQL… filter chips), and the level-milestone algorithm (`nextMilestoneToCelebrate` over progress + `localStorage` acks `typekernel.milestone.L<n>`, one celebration per level, freshest first).
+- **Micro-drills (`src/lib/intelligence/microDrill.ts`):** `buildMicroDrillPlan(worstKeys, seed, level)` emits a deterministic ≈45 s / 112-char `kind='weakness'` plan for the `D` action on Results; plan ids embed a focus-key digest so return-to-results hints can't collide.
+- **Overlays:** `Modal`, `ShortcutsModal`, `CommandPalette` share stacked-overlay rules — capture-phase Escape/Tab with **topmost-dialog ownership** (last `[role=dialog][aria-modal=true]` in document order wins), focus trap and opener restore.
+
+### 5.7 Daily Habit Engine & Developer Ergonomics (`src/lib/stats/dailyRoutine.ts`, `src/lib/customLessons/detabify.ts`)
+
+Implements `plans/UX_PERFECTION_WORKFLOW_PLAN.md` Phases 5–6 (shipped 2026-09-26):
+
+- **Daily Routine (§5.1):** the Dashboard's primary card runs a 3-step habit loop — 60 s weakness warmup (`buildDrillPlan` with `{sets: 1, setLength: 150}` through the normal `kind='weakness'` pipeline, gated on `settings.adaptiveLessons`) → push the frontier (2 `kind='lesson'` attempts) → speed sprint on the fastest mastered module (`pickSprintLesson`). Progress is **derived, never pushed**: `deriveRoutine()` folds finished attempts (`attemptsRepo.finishedSince`) since the per-day `localStorage` clock (`typekernel.routine.<YYYY-MM-DD>` — stale-day keys read as absent, so the routine rolls over at midnight). `dashboardEnterAction()` is the pure Enter dispatcher: unstarted → start, started → continue, **only a complete routine** hands `Enter` back to Resume Frontier (the resume card's `(Enter)` badge follows the same value). Unavailable steps (adaptive drills off, no weakness data, nothing mastered) derive as `skipped` with a human reason and a start click falls through to the first launchable step.
+- **Streak motivation (§5.2):** `streakEncouragement(current)` emits tiered static copy (top 20 % at ≥3 days, top 10 % at ≥7, top 1 % at ≥30) with the streak rule as always-visible text — no percentile data is fetched (offline law). The 14-day `ConsistencyStrip` cells carry a styled hover `CellTooltip` (day, status, lessons, minutes) instead of a native `title`.
+- **Animated goal rings (§5.3):** `GoalRing.tsx` replaces the old `GoalBar`s — SVG arc commits at 0 and sweeps to the real `pct` one rAF later, clamps the arc at 100 while the centre keeps the true value, and on `met` adds the primary ring + scale-in check. Reduce-motion drops the transition and lands on the final state.
+- **Auto-detabifier (§6.1):** pastes with `\t` into the Custom Lessons content textarea are intercepted, converted by pure `detabify(text, tabSize)` (Settings → Appearance `tabSize` = 2 | 4, default 2 = curriculum indent), caret-restored, and badged `Converted N tab(s) to spaces` for 3 s; a silent `onChange` safety net covers drag-drop/IME. The `CustomLessonSchema` "tabs are not supported" refine is deliberately untouched (§8 invariant #4).
+- **Transitions & focus polish (§6.2/§6.3):** `App.tsx` wraps the screen switch in `key={activeScreen}` + `animate-screen-in` (150 ms ease-out **opacity-only** — a `transform` would become the containing block for the fixed `LevelMiniMap`/`FrontierHud` and jitter them); `PillGroup` gained a measured sliding indicator shared by the Custom Lessons filters and every Settings pill group; the focus audit fixed the Lessons level-`<select>` and Command Palette input rings, added `Modal` `aria-labelledby`, and the reduced-motion scroll guard in Settings.
+
 ---
 
 ## 6. User Interface & Screen Architecture
@@ -411,14 +461,16 @@ graph TD
 
 ### Screen Inventory
 
-1. **`DashboardScreen` (`src/screens/DashboardScreen.tsx`):** Hero progress card, "Continue Current Lesson" action, 14-day activity strip, KPI summary cards, streak status, weak key spotlight, and quick access to weakness drills.
-2. **`LessonsScreen` (`src/screens/LessonsScreen.tsx`):** Full 260-lesson curriculum browser grouped by Level 1–7. Shows mastery gauge, search/filter by status (`completed`, `available`, `locked`), target key chips, and best WPM/accuracy badges.
-3. **`TypingSessionScreen` (`src/screens/TypingSessionScreen.tsx`):** Active typing arena. Contains the lesson text buffer with current-character indicator and inline error highlights, live telemetry strip (WPM, Accuracy, Errors, Time, Completion), and the interactive `KeyboardVisualization`.
-4. **`LessonResultsScreen` (`src/screens/LessonResultsScreen.tsx`):** Post-attempt summary. Displays pass/fail status, unlock notifications, performance metrics compared to personal bests, worst-key spotlight cards, and actions to retry, continue to next, or return to curriculum.
-5. **`StatisticsScreen` (`src/screens/StatisticsScreen.tsx`):** Lifetime analytics. Includes Recharts WPM/accuracy progression curves, 90-day consistency heatmap, full interactive `KeyHeatmap`, and the paginated raw attempt ledger with CSV export.
-6. **`WeaknessTrainingScreen` (`src/screens/WeaknessTrainingScreen.tsx`):** Dedicated drill mode targeting weakest characters, difficult bigrams, and slowest symbols.
+1. **`DashboardScreen` (`src/screens/DashboardScreen.tsx`):** Hero progress card, **Daily Routine** habit card (§5.7), animated daily-goal rings, streak encouragement + 14-day activity strip, KPI summary cards, weak key spotlight, and quick access to weakness drills. `Enter` starts/continues the Daily Routine and only resumes the frontier once it is complete (all paths guarded by `isEditableFocused`, `modalOpen`, `event.repeat`, modifier and focused-button checks).
+2. **`LessonsScreen` (`src/screens/LessonsScreen.tsx`):** Full 260-lesson curriculum browser grouped by Level 1–7 with mastery gauges, status filters, symbol-chip bar (`{ Brackets }`, `=> Arrows`, SQL…; OR within chips, AND with query/status/level), text search over title/description/tags/target-keys/**content**, right-side `LevelMiniMap` jump rail, sticky `FrontierHud` (`Enter` = resume frontier), golden "Level Complete" badges, and the `LevelMilestoneModal` celebration on finishing a level. Card/section components are `React.memo`'d; HUD offset is rAF-coalesced.
+3. **`TypingSessionScreen` (`src/screens/TypingSessionScreen.tsx`):** Active typing arena with the lesson buffer, live telemetry, `KeyboardVisualization`, **Zen mode** (`Ctrl+Shift+F` running / bare `F` idle; persisted in `settings.zenMode`), whitespace glyphs (`settings.whitespaceGlyphs`), compact heatmap glance (`Ctrl+Shift+H` / idle `H`), instant reset (`Tab+Enter`, `Ctrl+R`) and clean abandon (`Esc`) — all behind the focus shield; IME composition keystrokes are ignored.
+4. **`LessonResultsScreen` (`src/screens/LessonResultsScreen.tsx`):** Post-attempt summary with Smart Enter (advance on pass, instant retry on fail), Space replay-for-PR, Esc curriculum, and the **`D` Targeted Micro-Drill** card (worst ≥2-miss keys → `buildMicroDrillPlan` → Weakness screen, returns here via a plan-bound hint). Custom lessons judge against personal targets (`evaluatePersonal`), never the §8 gate.
+5. **`StatisticsScreen` (`src/screens/StatisticsScreen.tsx`):** Lifetime analytics. Includes Recharts WPM/accuracy progression curves, 90-day consistency heatmap, full interactive `KeyHeatmap`, and the paginated raw attempt ledger with CSV export. (Lazy-loaded — must stay out of the entry chunk.)
+6. **`WeaknessTrainingScreen` (`src/screens/WeaknessTrainingScreen.tsx`):** Adaptive drill mode with rapid-fire set transitions — `Space`/`Enter` advance (skippable 1.5 s countdown that re-checks live phase and never fires behind an open dialog), `Ctrl+R` restarts the current set (never reloads the webview), unmount `abandon()`s the session, and analysis errors surface with a Retry affordance.
 7. **`CustomLessonsScreen` (`src/screens/CustomLessonsScreen.tsx`):** Management dashboard for user-authored and imported lessons. Supports CRUD, drafting, filtering by syntax family, and JSON import/export.
-8. **`SettingsScreen` (`src/screens/SettingsScreen.tsx`):** Application preferences (theme, keymap, backspace policy, daily goal targets), full database backup/restore, and destructive reset flow.
+8. **`SettingsScreen` (`src/screens/SettingsScreen.tsx`):** Application preferences (theme, keymap, backspace policy, daily goals, **Zen mode**, **whitespace glyphs**), full database backup/restore (`exportBackupJson` reports "desktop app only" outside Tauri), and destructive reset flow.
+
+Global chrome: `TopBar.tsx` traffic dots drive real Tauri window controls (behind a `__TAURI_INTERNALS__` guard; close first `abandon()`s an in-flight session), and `GlobalHotkeys.tsx` owns every global chord plus the palette/cheatsheet overlays.
 
 ---
 
@@ -503,6 +555,12 @@ When implementing features, fixing bugs, or refactoring code in this repository,
 - **Transient UI State:** Use Zustand stores (`useSessionStore`, `useUiStore`) for in-memory session timers, keystroke buffers, and screen navigation.
 - **Persistent Domain State:** Use SQLite repositories (`src/lib/db/repositories.ts`) for attempt history, lesson progress, daily goals, and settings.
 
+### 7. Keyboard-Handler Discipline
+- Every `window.addEventListener("keydown", …)` **must** be removed in its effect cleanup; prefer pure decision helpers (`globalHotkeyDecision`, `resultsActionFor`, `isZenToggle`…) in `src/lib/hotkeys/` and `src/lib/session/` over hand-rolled key comparisons in components.
+- Before acting on an unmodified key (letters, `Enter`, `Space`), bail when `isEditableFocused()` (or a focused button/anchor would be hijacked) and on `event.repeat` / IME composition (`event.isComposing` / `keyCode 229`).
+- Never bind a bare letter that can occur in lesson content *while a session is running* — use a modified chord there (`Ctrl+Shift+F` not `F`, `Ctrl+Shift+H` not `H`); the chord must also be registered in `ShortcutsModal`/the keybinding matrix so docs don't drift.
+- New global chords go through `GlobalHotkeys` (capture phase + `stopImmediatePropagation`) so they can't double-fire with screen-level bubble listeners; new overlays must join the topmost-dialog Escape/Tab ownership check.
+
 ---
 
 ## 9. Development & Build Commands
@@ -528,6 +586,9 @@ pnpm tauri dev
 ```sh
 # Run all Vitest TypeScript unit & integration test suites
 pnpm test
+
+# Type-check without emitting (run this before considering any change done)
+npx tsc --noEmit
 
 # Run Rust backend test suite
 cd src-tauri && cargo test && cd ..
@@ -559,4 +620,7 @@ pnpm tauri build
 - **Pass Threshold:** $\ge 95\%$ accuracy AND $> 45$ WPM on the same attempt.
 - **Persistence:** Local SQLite (`typing_trainer.db`) via `tauri-plugin-sql`, migrations in `src-tauri/migrations/`.
 - **Navigation:** Handled via `useUiStore` (`dashboard`, `lessons`, `typing-session`, `lesson-results`, `statistics`, `weakness-training`, `custom-lessons`, `settings`).
+- **Keyboard-first layer (UX plan Phases 1–4 ✅):** `GlobalHotkeys.tsx` + `lib/hotkeys/globalHotkeys.ts` (Ctrl+K, Alt+1..6, g-chords, `/`, `?`) and `lib/session/goldenLoop.ts` + `focusShield.ts` (Smart Enter, Tab+Enter, Zen `F`/`Ctrl+Shift+F`, heatmap `H`/`Ctrl+Shift+H`, `D` micro-drill). Full matrix: `plans/UX_PERFECTION_WORKFLOW_PLAN.md` §10.
+- **Pre-commit gate:** `npx tsc --noEmit && pnpm test` (31 files / 336 tests as of 2026-09-26); perf budget `pnpm build && pnpm perf:budget` (entry ≈199.6 KB gzip, budget 400 KB).
+- **Status:** UX plan **Phases 1–6 all implemented & verified (2026-09-26)** — Phase 5 = Daily Routine card + Enter dispatch + animated goal rings + streak copy/strip tooltip (`lib/stats/dailyRoutine.ts`, `GoalRing.tsx`); Phase 6 = paste auto-detabifier (`lib/customLessons/detabify.ts`), `tabSize` setting, 150 ms screen fade, sliding `PillGroup` indicator, focus/a11y audit fixes.
 - **Key Philosophy:** 100% offline, privacy-first, zero telemetry, developer-centric symbol focus.

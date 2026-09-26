@@ -35,9 +35,9 @@ import { notifyStatsChanged } from "./useStatsStore";
  * re-render of the whole tree).
  *
  * Keydown routing lives in the screen's effect: printable chars, Backspace
- * and Enter are forwarded here; Ctrl/Alt/Meta combos pass through; Tab is
- * consumed as a space (code lines never contain tabs — tabs are rejected by
- * LessonSchema).
+ * and Enter are forwarded here; Ctrl/Alt/Meta combos pass through (Ctrl+R is
+ * the instant reset); Tab is consumed as a space (code lines never contain
+ * tabs — tabs are rejected by LessonSchema) and arms the Tab+Enter reset.
  */
 
 export type SessionPhase = "idle" | "running" | "set-summary" | "finished";
@@ -87,6 +87,13 @@ interface SessionStore {
   startDrill: (plan: DrillPlan) => Promise<void>;
   /** Continues to the next drill set after a set summary (Weakness screen). */
   resumeDrill: () => void;
+  /**
+   * §4.1.2 — instant reset of the CURRENT drill set (Weakness screen's
+   * Ctrl/Cmd+R): a fresh buffer for the set already on screen (or the one a
+   * set summary is holding), keeping setIndex, prior set results and the
+   * open training session untouched. Never a page reload, never a dialog.
+   */
+  restartCurrentSet: () => void;
   typeChar: (char: string) => void;
   backspace: () => void;
   /** Runs (or resumes) the save-attempt pipeline after a failure. */
@@ -416,6 +423,26 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     resumeDrill: () => {
       if (get().phase !== "set-summary" || get().drill === null) return;
       set({ phase: "running", now: Date.now() });
+      startTimer(() => set({ now: Date.now() }));
+    },
+
+    restartCurrentSet: () => {
+      const { phase, lesson, drill } = get();
+      if (drill === null || lesson === null) return;
+      if (phase !== "running" && phase !== "set-summary") return;
+      stopTimer();
+      // `lesson` already points at the set on screen (at a set summary the
+      // finish pipeline swapped it in ahead of `phase: "set-summary"`), so
+      // this starts THAT set — not the plan from set 0.
+      set({
+        phase: "running",
+        engineState: createSession(lesson.content),
+        now: Date.now(),
+        summary: null,
+        outcome: null,
+        persistStage: "none",
+        persistError: null,
+      });
       startTimer(() => set({ now: Date.now() }));
     },
 
